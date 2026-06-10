@@ -302,7 +302,7 @@ function App() {
   if (authLoading) {
     return /*#__PURE__*/React.createElement("div", {
       style: {
-        height: '100dvh',
+        height: '100%',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -378,7 +378,7 @@ function App() {
   if (!signed) {
     return /*#__PURE__*/React.createElement("div", {
       style: {
-        height: '100dvh',
+        height: '100%',
         display: 'flex',
         flexDirection: 'column',
         background: '#071A40'
@@ -396,7 +396,7 @@ function App() {
   if (!isMobile) {
     return /*#__PURE__*/React.createElement("div", {
       style: {
-        height: '100dvh',
+        height: '100%',
         display: 'flex',
         flexDirection: 'column',
         background: 'var(--bg)'
@@ -423,7 +423,7 @@ function App() {
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
-      height: '100dvh',
+      height: '100%',
       display: 'flex',
       flexDirection: 'column',
       background: 'var(--bg)'

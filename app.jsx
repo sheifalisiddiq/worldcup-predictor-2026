@@ -255,7 +255,7 @@ function App() {
 
   if (authLoading) {
     return (
-      <div style={{ height:'100dvh', display:'flex', flexDirection:'column', alignItems:'center',
+      <div style={{ height:'100%', display:'flex', flexDirection:'column', alignItems:'center',
         justifyContent:'center', background:'#071A40', gap:16 }}>
         <div className="wc26-stripe" style={{ position:'absolute', top:0, left:0, width:'100%' }} />
         <div className="display" style={{ color:'#E8192C', fontSize:'clamp(48px,12vw,96px)', lineHeight:.85 }}>WC</div>
@@ -277,7 +277,7 @@ function App() {
 
   if (!signed) {
     return (
-      <div style={{ height:'100dvh', display:'flex', flexDirection:'column', background:'#071A40' }}>
+      <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'#071A40' }}>
         <LandingTopBar theme={theme} setTheme={setTheme} />
         <div style={{ flex:1, minHeight:0 }}>{product}</div>
       </div>
@@ -286,7 +286,7 @@ function App() {
 
   if (!isMobile) {
     return (
-      <div style={{ height:'100dvh', display:'flex', flexDirection:'column', background:'var(--bg)' }}>
+      <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'var(--bg)' }}>
         <DesktopNav tab={tab} setTab={handleTabChange} theme={theme} setTheme={setTheme} onSignOut={signOut} />
         <div style={{ flex:1, minHeight:0, overflowY:'hidden' }}>
           <div style={{ maxWidth:1200, margin:'0 auto', height:'100%' }}>{product}</div>
@@ -296,7 +296,7 @@ function App() {
   }
 
   return (
-    <div style={{ height:'100dvh', display:'flex', flexDirection:'column', background:'var(--bg)' }}>
+    <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'var(--bg)' }}>
       <MobileHeader theme={theme} setTheme={setTheme} />
       <div style={{ flex:1, minHeight:0, position:'relative' }}>
         <MobileContent openMatch={openMatch} setOpenMatch={setOpenMatch} tab={tab} setTab={handleTabChange} product={product} />
