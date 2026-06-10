@@ -91,7 +91,11 @@ function App() {
           setPredsReady(true);
           setSigned(true);
         } catch (err) {
+          // Google auth succeeded but reading/writing the user's profile in the
+          // Realtime DB failed (e.g. security rules not deployed, network). Surface
+          // it instead of silently bouncing the user back to a dead Landing page.
           console.error('Auth setup error:', err);
+          window.toast('Signed in, but couldn’t load your profile. Check connection and retry.', 'error', 6000);
           setSigned(false);
         }
       } else {
@@ -255,10 +259,16 @@ function App() {
     // Popup keeps the click gesture and avoids the cross-domain redirect storage.
     const ua = navigator.userAgent || '';
     const inApp = /FBAN|FBAV|Instagram|Line|Twitter|WhatsApp|Snapchat|Pinterest|TikTok|MicroMessenger/i.test(ua);
-    window.fbAuth.signInWithPopup(window.fbProvider).catch(err => {
+    // Return the promise so the Landing button can re-enable itself once this
+    // settles (otherwise a blocked/closed popup leaves it stuck on "SIGNING IN…").
+    return window.fbAuth.signInWithPopup(window.fbProvider).catch(err => {
       const ignorable = err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request';
       if (ignorable) return;
-      if (err.code === 'auth/popup-blocked' || inApp) {
+      if (err.code === 'auth/unauthorized-domain') {
+        // The page is on a URL that isn't in Firebase's authorized-domains list
+        // (e.g. a Vercel preview deployment). Point the user at the real app.
+        window.toast('This link can’t sign in. Open worldcuppredictor-five.vercel.app', 'error', 7000);
+      } else if (err.code === 'auth/popup-blocked' || inApp) {
         // In-app browsers (Instagram/WhatsApp/etc.) cannot do Google OAuth at all,
         // and some browsers block the popup. Tell the user how to recover.
         window.toast('Open this page in Chrome or Safari to sign in.', 'error', 6000);

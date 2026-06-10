@@ -15,7 +15,11 @@ function Landing({
   const flagCodes = ['ar', 'br', 'fr', 'es', 'gb-eng', 'pt', 'de', 'nl', 'mx', 'us', 'ca', 'jp', 'ma', 'co', 'uy', 'sn', 'ng', 'kr', 'be', 'hr', 'ch', 'dk', 'se', 'pl'];
   function handleSignIn() {
     setSigningIn(true);
-    onSignIn();
+    // Always re-enable the button once sign-in settles. If the popup is blocked,
+    // closed, or the domain isn't authorized, the promise rejects (handled in
+    // onSignIn) — without this reset the button would stay stuck on "SIGNING IN…".
+    // On success the component unmounts, so the reset is a harmless no-op.
+    Promise.resolve(onSignIn()).finally(() => setSigningIn(false));
   }
   return /*#__PURE__*/React.createElement("div", {
     ref: scrollRef,
