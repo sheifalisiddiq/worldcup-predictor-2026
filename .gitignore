@@ -4,3 +4,7 @@ Thumbs.db
 
 .vercel
 .gstack/
+
+node_modules/
+# dist/ is committed on purpose: it's the precompiled JSX so Vercel needs no
+# build step. Rebuild with `npm run build` after editing any .jsx source.

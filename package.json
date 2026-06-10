@@ -1,0 +1,14 @@
+{
+  "name": "worldcup-predictor-2026",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FIFA World Cup 2026 prediction game — static HTML + React (CDN). JSX is precompiled to plain JS so browsers never download/compile Babel at runtime.",
+  "scripts": {
+    "build": "babel rings.jsx -o dist/rings.js && babel components.jsx -o dist/components.js && babel screens.jsx -o dist/screens.js && babel screens2.jsx -o dist/screens2.js && babel app.jsx -o dist/app.js"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.24.8",
+    "@babel/core": "^7.25.2",
+    "@babel/preset-react": "^7.24.7"
+  }
+}
