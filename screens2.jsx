@@ -240,6 +240,8 @@ function Profile({ predictions, onOpen, matches }) {
   const [tab, setTab] = useS2('history');
   const [mounted, setMounted] = useS2(false);
   const [userRank, setUserRank] = useS2(null);
+  const [showTeamPicker, setShowTeamPicker] = useS2(false);
+  const [localFavTeam, setLocalFavTeam] = useS2((WC.me && WC.me.favTeam) || 'Argentina');
   useE2(() => { const t = setTimeout(() => setMounted(true), 80); return () => clearTimeout(t); }, []);
 
   useE2(() => {
@@ -288,7 +290,16 @@ function Profile({ predictions, onOpen, matches }) {
   const me = WC.me || {};
   const displayName = me.displayName || 'Player';
   const photo = me.photo || '';
-  const favTeam = me.favTeam || 'Argentina';
+  const favTeam = localFavTeam;
+
+  async function changeFavTeam(teamName) {
+    if (!WC.me || !WC.me.uid) return;
+    setLocalFavTeam(teamName);
+    WC.me.favTeam = teamName;
+    setShowTeamPicker(false);
+    await window.fbDb.ref('users/' + WC.me.uid).update({ favTeam: teamName });
+    window.toast('Favourite team updated!', 'success', 2000);
+  }
 
   function shareProfile() {
     const text = `🏆 I'm rank #${userRank || '?'} in the WC2026 Predictor with ${stats.total} pts and ${stats.exact} exact scores! #WorldCup2026`;
@@ -334,10 +345,15 @@ function Profile({ predictions, onOpen, matches }) {
             </div>
             <div style={{ minWidth:0, flex:1 }}>
               <div className="display" style={{ fontSize:28, color:'#FDFCFA', lineHeight:.88 }}>{displayName}</div>
-              <div style={{ display:'flex', alignItems:'center', gap:7, marginTop:7 }}>
+              <button onClick={() => setShowTeamPicker(true)} style={{
+                display:'flex', alignItems:'center', gap:7, marginTop:7,
+                background:'rgba(255,255,255,.1)', border:'2px solid rgba(255,255,255,.25)',
+                padding:'5px 10px', cursor:'pointer', color:'inherit',
+              }}>
                 <Flag code={WC.teams[favTeam]?.code} size={22} />
-                <span className="mono" style={{ fontSize:11, color:'rgba(255,255,255,.7)', fontWeight:600 }}>{favTeam}</span>
-              </div>
+                <span className="mono" style={{ fontSize:11, color:'rgba(255,255,255,.85)', fontWeight:600 }}>{favTeam}</span>
+                <span style={{ fontSize:9, color:'rgba(255,255,255,.5)', marginLeft:2 }}>✏️</span>
+              </button>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
               <div className="bd" style={{
@@ -492,6 +508,76 @@ function Profile({ predictions, onOpen, matches }) {
             })}
           </div>
         )}
+      </div>
+
+      {showTeamPicker && (
+        <TeamPicker
+          current={favTeam}
+          onSelect={changeFavTeam}
+          onClose={() => setShowTeamPicker(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* =================== TEAM PICKER MODAL =================== */
+function TeamPicker({ current, onSelect, onClose }) {
+  const [search, setSearch] = useS2('');
+  const teams = Object.keys(WC.teams).sort();
+  const filtered = search
+    ? teams.filter(t => t.toLowerCase().includes(search.toLowerCase()))
+    : teams;
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,.7)',
+      zIndex:1000, display:'flex', alignItems:'flex-end', justifyContent:'center',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:'var(--panel)', border:'3px solid #000',
+        boxShadow:'0 -6px 0 0 #000', width:'100%', maxWidth:480,
+        maxHeight:'75vh', display:'flex', flexDirection:'column',
+      }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding:'14px 16px', borderBottom:'3px solid #000', background:'#071A40' }}>
+          <div className="display" style={{ fontSize:22, color:'#FDFCFA' }}>PICK YOUR TEAM</div>
+          <button onClick={onClose} style={{ fontSize:22, color:'#fff', lineHeight:1 }}>✕</button>
+        </div>
+        <div style={{ padding:'10px 14px', borderBottom:'2px solid var(--hair)' }}>
+          <input
+            autoFocus
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search team..."
+            style={{
+              width:'100%', padding:'9px 12px', border:'2px solid var(--line)',
+              background:'var(--bg)', color:'var(--ink)', fontSize:13,
+              fontFamily:'inherit', outline:'none',
+            }}
+          />
+        </div>
+        <div style={{ overflowY:'auto', padding:10, display:'grid',
+          gridTemplateColumns:'repeat(2,1fr)', gap:6 }}>
+          {filtered.map(name => {
+            const on = name === current;
+            return (
+              <button key={name} onClick={() => onSelect(name)} style={{
+                display:'flex', alignItems:'center', gap:10, padding:'9px 11px',
+                border: on ? '3px solid #FFC800' : '2px solid var(--line)',
+                background: on ? '#FFC800' : 'var(--bg)',
+                color: on ? '#000' : 'var(--ink)',
+                cursor:'pointer', textAlign:'left',
+                boxShadow: on ? '3px 3px 0 0 #000' : 'none',
+                transition:'background .1s',
+              }}>
+                <Flag code={WC.teams[name]?.code} size={24} />
+                <span className="heavy" style={{ fontSize:11, lineHeight:1.2 }}>{name}</span>
+                {on && <span style={{ marginLeft:'auto', fontSize:14 }}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
