@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>World Cup 2026 Predictor</title>
+<meta name="description" content="Predict all 104 World Cup 2026 matches. Climb the global table. Joga bonito." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --cup-red:#E63329; --cup-blue:#0042A6; --cup-green:#0FA958;
+    --cup-lime:#B8E236; --cup-gold:#D4A437; --cup-black:#0A0A0A;
+    --cup-cream:#F5F1E8; --samba-yellow:#FEC700; --samba-green:#02462E;
+    --sky:#4FB7E8;
+    --bg:var(--cup-cream);
+    --panel:#ffffff;
+    --ink:var(--cup-black);
+    --ink-soft:#46443d;
+    --line:var(--cup-black);
+    --shadow:var(--cup-black);
+    --chip:#ffffff;
+    --muted:#8a857a;
+    --hair:rgba(10,10,10,.12);
+    --transition-speed: 0.28s;
+  }
+  [data-theme="dark"] {
+    --bg:#0b0f0c;
+    --panel:#13181a;
+    --ink:#F5F1E8;
+    --ink-soft:#c9c6bd;
+    --line:#000000;
+    --shadow:#000000;
+    --chip:#1b2124;
+    --muted:#7d847f;
+    --hair:rgba(245,241,232,.14);
+  }
+
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; padding:0; }
+  body {
+    font-family:'Inter',system-ui,sans-serif;
+    background:#1a1a1a;
+    color:var(--ink);
+    overflow:hidden;
+  }
+  #root { width:100vw; height:100vh; }
+
+  .display { font-family:'Anton',sans-serif; text-transform:uppercase; letter-spacing:-.01em; font-weight:400; line-height:.9; }
+  .heavy { font-family:'Archivo',sans-serif; font-weight:900; }
+  .mono { font-family:'JetBrains Mono',monospace; font-variant-numeric:tabular-nums; }
+
+  .hard { box-shadow:4px 4px 0 0 var(--shadow); }
+  .hard-lg { box-shadow:6px 6px 0 0 var(--shadow); }
+  .bd { border:3px solid var(--line); }
+
+  ::-webkit-scrollbar { width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb { background:var(--ink); border-radius:0; }
+  ::-webkit-scrollbar-track { background:transparent; }
+
+  button { font-family:inherit; cursor:pointer; border:none; background:none; color:inherit; }
+  img { display:block; }
+
+  @keyframes pulseSkel { 0%,100%{opacity:.5;} 50%{opacity:.9;} }
+  @keyframes spinSlow { to { transform:rotate(360deg); } }
+  @keyframes floaty { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-6px);} }
+  @keyframes popIn { 0%{ transform:scale(.7); opacity:0;} 60%{ transform:scale(1.08);} 100%{ transform:scale(1); opacity:1;} }
+  @keyframes slideUp { from{ transform:translateY(14px); opacity:0;} to{ transform:translateY(0); opacity:1;} }
+  @keyframes slideInRight { from{ transform:translateX(100%); opacity:0;} to{ transform:translateX(0); opacity:1;} }
+  @keyframes slideInLeft { from{ transform:translateX(-100%); opacity:0;} to{ transform:translateX(0); opacity:1;} }
+  @keyframes fadeIn { from{ opacity:0;} to{ opacity:1;} }
+  @keyframes toastSlide { from{ transform:translateY(80px); opacity:0;} to{ transform:translateY(0); opacity:1;} }
+  @keyframes toastOut { from{ transform:translateY(0); opacity:1;} to{ transform:translateY(80px); opacity:0;} }
+  @keyframes pulse { 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.04); } }
+  @keyframes shimmer { 0%{ background-position:-400px 0; } 100%{ background-position:400px 0; } }
+  @keyframes countUp { from{ opacity:0; transform:translateY(10px);} to{ opacity:1; transform:translateY(0);} }
+  @keyframes ballBounce { 0%,100%{transform:translateY(0) rotate(0deg);} 25%{transform:translateY(-20px) rotate(-15deg);} 75%{transform:translateY(-8px) rotate(10deg);} }
+  @keyframes stripeSlide { from{background-position:0 0;} to{background-position:40px 0;} }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration:.001ms !important; transition-duration:.001ms !important; }
+  }
+
+  /* Toast system */
+  #toast-container {
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    z-index:9999; display:flex; flex-direction:column; gap:8px; align-items:center;
+    pointer-events:none;
+  }
+  .toast {
+    font-family:'Archivo',sans-serif; font-weight:900;
+    padding:12px 22px; border:3px solid var(--cup-black); font-size:14px;
+    letter-spacing:.04em; text-transform:uppercase; pointer-events:auto;
+    box-shadow:5px 5px 0 0 var(--cup-black); animation:toastSlide .3s cubic-bezier(.34,1.56,.64,1) forwards;
+    white-space:nowrap;
+  }
+  .toast.out { animation:toastOut .25s ease forwards; }
+  .toast-success { background:var(--cup-green); color:#fff; }
+  .toast-info { background:var(--samba-yellow); color:var(--cup-black); }
+  .toast-error { background:var(--cup-red); color:#fff; }
+
+  /* Screen transitions */
+  .screen-enter { animation:fadeIn .22s ease forwards; }
+  .screen-slide-right { animation:slideInRight .25s cubic-bezier(.34,1.1,.64,1) forwards; }
+  .screen-slide-left { animation:slideInLeft .25s cubic-bezier(.34,1.1,.64,1) forwards; }
+
+  /* Live pulse dot */
+  .live-dot {
+    width:8px; height:8px; border-radius:50%; background:#fff;
+    animation:pulseSkel .9s infinite;
+    box-shadow:0 0 0 0 rgba(255,255,255,.6);
+  }
+
+  /* Shimmer skeleton */
+  .skeleton-shimmer {
+    background:linear-gradient(90deg,var(--chip) 25%,rgba(200,200,200,.15) 50%,var(--chip) 75%);
+    background-size:400px 100%;
+    animation:shimmer 1.4s infinite linear;
+  }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="toast-container"></div>
+  <canvas id="confetti-canvas" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9998;"></canvas>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <!-- Confetti engine -->
+  <script>
+  // Tiny confetti engine
+  window.fireConfetti = function(opts = {}) {
+    const canvas = document.getElementById('confetti-canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const colors = opts.colors || ['#E63329','#FEC700','#0FA958','#B8E236','#0042A6','#4FB7E8','#D4A437'];
+    const count = opts.count || 120;
+    const origin = opts.origin || { x: 0.5, y: 0.6 };
+    const particles = [];
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.random() * 360 - 180) * Math.PI / 180;
+      const speed = 4 + Math.random() * 10;
+      particles.push({
+        x: canvas.width * origin.x,
+        y: canvas.height * origin.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 8,
+        size: 6 + Math.random() * 10,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rot: Math.random() * 360,
+        rotSpeed: (Math.random() - .5) * 8,
+        alpha: 1,
+        shape: Math.random() > .5 ? 'rect' : 'circle',
+      });
+    }
+    let frame;
+    function draw() {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      let alive = false;
+      for (const p of particles) {
+        p.x += p.vx; p.y += p.vy;
+        p.vy += .35; p.vx *= .985;
+        p.rot += p.rotSpeed;
+        p.alpha -= .012;
+        if (p.alpha <= 0) continue;
+        alive = true;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, p.alpha);
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot * Math.PI / 180);
+        ctx.fillStyle = p.color;
+        if (p.shape === 'rect') ctx.fillRect(-p.size/2, -p.size/4, p.size, p.size/2);
+        else { ctx.beginPath(); ctx.arc(0,0,p.size/2,0,Math.PI*2); ctx.fill(); }
+        ctx.restore();
+      }
+      if (alive) frame = requestAnimationFrame(draw);
+      else ctx.clearRect(0,0,canvas.width,canvas.height);
+    }
+    cancelAnimationFrame(frame);
+    draw();
+  };
+
+  window.toast = function(msg, type='info', duration=2800) {
+    const container = document.getElementById('toast-container');
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.textContent = msg;
+    container.appendChild(el);
+    setTimeout(() => {
+      el.classList.add('out');
+      setTimeout(() => el.remove(), 280);
+    }, duration);
+  };
+  </script>
+
+  <script src="data.js"></script>
+  <script type="text/babel" src="rings.jsx"></script>
+  <script type="text/babel" src="components.jsx"></script>
+  <script type="text/babel" src="screens.jsx"></script>
+  <script type="text/babel" src="screens2.jsx"></script>
+  <script type="text/babel" src="app.jsx"></script>
+</body>
+</html>
