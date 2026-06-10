@@ -1,4 +1,4 @@
-const CACHE = 'wc26-v1';
+const CACHE = 'wc26-v2';
 const PRECACHE = ['/', '/data.js', '/components.jsx', '/screens.jsx', '/screens2.jsx', '/app.jsx', '/icon.svg'];
 
 self.addEventListener('install', e => {
