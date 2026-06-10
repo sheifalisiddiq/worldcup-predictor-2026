@@ -1,5 +1,5 @@
 /* Vercel serverless function — proxies football-data.org to hide the API key.
-   Requires FOOTBALL_API_KEY environment variable set in Vercel project settings. */
+   Requires FOOTBALL_API_KEY and FIREBASE_DB_SECRET env vars in Vercel project settings. */
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
@@ -23,6 +23,20 @@ export default async function handler(req, res) {
 
     const data = await r.json();
     const matches = (data.matches || []).map(normalizeMatch);
+
+    // Write kickoff timestamps to Firebase _matches/ so security rules can enforce
+    // the 1-hour pre-kickoff prediction lock server-side (fire-and-forget).
+    const dbSecret = process.env.FIREBASE_DB_SECRET;
+    if (dbSecret) {
+      const kickoffs = {};
+      for (const m of matches) {
+        kickoffs[m.id] = { kickoff: new Date(m.kickoff).getTime() };
+      }
+      fetch(
+        `https://wc26-predictor-3558c-default-rtdb.firebaseio.com/_matches.json?auth=${dbSecret}`,
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(kickoffs) }
+      ).catch(() => {}); // non-blocking, don't fail the response if this errors
+    }
 
     res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=30');
     res.json({ matches });
