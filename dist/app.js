@@ -95,6 +95,9 @@ function App() {
     localStorage.setItem(LS.theme, theme);
   }, [theme]);
   useEffect(() => {
+    // Keep the session in this browser's local storage so a reload stays signed in.
+    window.fbAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => {});
+    // Handle any in-flight redirect result (users mid-flow from the old redirect path).
     window.fbAuth.getRedirectResult().catch(err => {
       if (err.code && err.code !== 'auth/redirect-cancelled-by-user') {
         window.toast('Sign-in failed: ' + err.message, 'error', 4000);
@@ -272,18 +275,24 @@ function App() {
     }
   }
   function signIn() {
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if (isMobile) {
-      window.fbAuth.signInWithRedirect(window.fbProvider).catch(err => {
-        window.toast('Sign-in failed: ' + err.message, 'error', 4000);
-      });
-    } else {
-      window.fbAuth.signInWithPopup(window.fbProvider).catch(err => {
-        if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
-          window.toast('Sign-in failed: ' + err.message, 'error', 4000);
-        }
-      });
-    }
+    // Popup on every device. signInWithRedirect loses the session on mobile
+    // browsers that partition third-party storage (Safari ITP, Chrome's
+    // third-party-cookie phase-out) because auth lives on a different domain
+    // (*.firebaseapp.com) than the app — users got bounced back to Landing.
+    // Popup keeps the click gesture and avoids the cross-domain redirect storage.
+    const ua = navigator.userAgent || '';
+    const inApp = /FBAN|FBAV|Instagram|Line|Twitter|WhatsApp|Snapchat|Pinterest|TikTok|MicroMessenger/i.test(ua);
+    window.fbAuth.signInWithPopup(window.fbProvider).catch(err => {
+      const ignorable = err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request';
+      if (ignorable) return;
+      if (err.code === 'auth/popup-blocked' || inApp) {
+        // In-app browsers (Instagram/WhatsApp/etc.) cannot do Google OAuth at all,
+        // and some browsers block the popup. Tell the user how to recover.
+        window.toast('Open this page in Chrome or Safari to sign in.', 'error', 6000);
+      } else {
+        window.toast('Sign-in failed: ' + (err.message || err.code), 'error', 4000);
+      }
+    });
   }
   function signOut() {
     window.fbAuth.signOut().then(() => {
