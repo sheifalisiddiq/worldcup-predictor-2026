@@ -1,0 +1,22 @@
+{
+  "rules": {
+    "users": {
+      ".read": "auth != null",
+      ".indexOn": ["totalPoints"],
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "predictions": {
+      ".read": "auth != null",
+      ".indexOn": ["uid"],
+      "$predId": {
+        ".write": "auth != null && (!data.exists() ? newData.child('uid').val() === auth.uid : data.child('uid').val() === auth.uid)"
+      }
+    },
+    "_matches": {
+      ".read": "auth != null",
+      ".write": false
+    }
+  }
+}
