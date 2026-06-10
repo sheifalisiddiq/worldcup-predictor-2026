@@ -14,28 +14,26 @@ function Leaderboard() {
   useE2(() => { const t = setTimeout(() => setMounted(true), 100); return () => clearTimeout(t); }, []);
 
   useE2(() => {
-    const unsub = window.fbDb.collection('users')
-      .orderBy('totalPoints', 'desc')
-      .limit(50)
-      .onSnapshot(snap => {
-        const list = snap.docs.map((doc, i) => {
-          const d = doc.data();
-          return {
-            uid:         d.uid,
-            displayName: d.displayName || 'Player',
-            photo:       d.photoURL || '',
-            favCode:     WC.teams[d.favTeam] ? WC.teams[d.favTeam].code : 'ar',
-            points:      d.totalPoints || 0,
-            exact:       d.exactScores || 0,
-            played:      (d.exactScores || 0) + (d.correctResults || 0),
-            rank:        i + 1,
-            isMe:        d.uid === (WC.me && WC.me.uid),
-          };
-        });
-        setUsers(list);
-        setLbLoading(false);
-      }, () => setLbLoading(false));
-    return () => unsub();
+    const ref = window.fbDb.ref('users').orderByChild('totalPoints').limitToLast(50);
+    const cb = snap => {
+      const raw = [];
+      snap.forEach(child => raw.unshift(child.val()));
+      const list = raw.map((d, i) => ({
+        uid:         d.uid,
+        displayName: d.displayName || 'Player',
+        photo:       d.photoURL || '',
+        favCode:     WC.teams[d.favTeam] ? WC.teams[d.favTeam].code : 'ar',
+        points:      d.totalPoints || 0,
+        exact:       d.exactScores || 0,
+        played:      (d.exactScores || 0) + (d.correctResults || 0),
+        rank:        i + 1,
+        isMe:        d.uid === (WC.me && WC.me.uid),
+      }));
+      setUsers(list);
+      setLbLoading(false);
+    };
+    ref.on('value', cb, () => setLbLoading(false));
+    return () => ref.off('value', cb);
   }, []);
 
   const top3 = users.slice(0, 3);
@@ -246,12 +244,13 @@ function Profile({ predictions, onOpen, matches }) {
 
   useE2(() => {
     if (!WC.me || !WC.me.uid) return;
-    window.fbDb.collection('users').doc(WC.me.uid).get().then(snap => {
-      if (!snap.exists) return;
-      const myPts = snap.data().totalPoints || 0;
-      window.fbDb.collection('users').where('totalPoints', '>', myPts).get().then(s => {
-        setUserRank(s.size + 1);
-      }).catch(() => {});
+    window.fbDb.ref('users/' + WC.me.uid).once('value').then(snap => {
+      if (!snap.exists()) return null;
+      const myPts = snap.val().totalPoints || 0;
+      return window.fbDb.ref('users').orderByChild('totalPoints').startAt(myPts + 1).once('value');
+    }).then(s => {
+      if (!s) return;
+      setUserRank(s.numChildren() + 1);
     }).catch(() => {});
   }, []);
 

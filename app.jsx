@@ -52,10 +52,10 @@ function App() {
     const unsub = window.fbAuth.onAuthStateChanged(async (user) => {
       if (user) {
         try {
-          const userRef = window.fbDb.collection('users').doc(user.uid);
-          const snap = await userRef.get();
+          const userRef = window.fbDb.ref('users/' + user.uid);
+          const snap = await userRef.once('value');
           let favTeam = 'Argentina';
-          if (!snap.exists) {
+          if (!snap.exists()) {
             await userRef.set({
               uid: user.uid,
               displayName: user.displayName || 'Player',
@@ -66,10 +66,10 @@ function App() {
               exactScores: 0,
               correctResults: 0,
               predictionsCount: 0,
-              createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+              createdAt: firebase.database.ServerValue.TIMESTAMP,
             });
           } else {
-            favTeam = snap.data().favTeam || 'Argentina';
+            favTeam = snap.val().favTeam || 'Argentina';
           }
           WC.me = {
             uid: user.uid,
@@ -138,11 +138,11 @@ function App() {
 
   async function loadPredictions(uid) {
     try {
-      const snap = await window.fbDb.collection('predictions')
-        .where('uid', '==', uid).get();
+      const snap = await window.fbDb.ref('predictions')
+        .orderByChild('uid').equalTo(uid).once('value');
       const preds = {};
-      snap.forEach(doc => {
-        const d = doc.data();
+      snap.forEach(child => {
+        const d = child.val();
         preds[d.matchId] = { a: d.homeGoals, b: d.awayGoals, points: d.points, scored: d.scored };
       });
       setPredictions(preds);
@@ -155,7 +155,7 @@ function App() {
 
   async function scoreFinishedMatches(matches, currentPredictions, uid) {
     try {
-      const batch = window.fbDb.batch();
+      const updates = {};
       let pointsDelta = 0, exactDelta = 0, resultDelta = 0;
       let hasUpdates = false;
       for (const m of matches) {
@@ -164,8 +164,8 @@ function App() {
         if (!pred || pred.scored) continue;
         const pts = WC.pointsFor(pred, m);
         const docId = uid + '_' + m.id;
-        const ref = window.fbDb.collection('predictions').doc(docId);
-        batch.update(ref, { points: pts, scored: true });
+        updates['predictions/' + docId + '/points'] = pts;
+        updates['predictions/' + docId + '/scored'] = true;
         pointsDelta += pts;
         const exactThreshold = m.stage === 'Group Stage' ? WC.scoring.exactGroup : WC.scoring.exactKnockout;
         if (pts >= exactThreshold) exactDelta++;
@@ -173,13 +173,15 @@ function App() {
         hasUpdates = true;
       }
       if (hasUpdates) {
-        const userRef = window.fbDb.collection('users').doc(uid);
-        batch.update(userRef, {
-          totalPoints: firebase.firestore.FieldValue.increment(pointsDelta),
-          exactScores: firebase.firestore.FieldValue.increment(exactDelta),
-          correctResults: firebase.firestore.FieldValue.increment(resultDelta),
+        await window.fbDb.ref().update(updates);
+        const userRef = window.fbDb.ref('users/' + uid);
+        await userRef.transaction(data => {
+          if (!data) return data;
+          data.totalPoints = (data.totalPoints || 0) + pointsDelta;
+          data.exactScores = (data.exactScores || 0) + exactDelta;
+          data.correctResults = (data.correctResults || 0) + resultDelta;
+          return data;
         });
-        await batch.commit();
         await loadPredictions(uid);
       }
     } catch (err) {
@@ -193,19 +195,21 @@ function App() {
     const isNew = !predictions[matchId];
     setPredictions(p => ({ ...p, [matchId]: { a: val.a, b: val.b, points: null, scored: false } }));
     try {
-      await window.fbDb.collection('predictions').doc(docId).set({
+      await window.fbDb.ref('predictions/' + docId).set({
         uid: currentUser.uid,
         matchId: matchId,
         homeGoals: val.a,
         awayGoals: val.b,
-        submittedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        submittedAt: firebase.database.ServerValue.TIMESTAMP,
         points: null,
         scored: false,
-      }, { merge: true });
+      });
       if (isNew) {
-        window.fbDb.collection('users').doc(currentUser.uid)
-          .update({ predictionsCount: firebase.firestore.FieldValue.increment(1) })
-          .catch(() => {});
+        window.fbDb.ref('users/' + currentUser.uid).transaction(data => {
+          if (!data) return data;
+          data.predictionsCount = (data.predictionsCount || 0) + 1;
+          return data;
+        });
       }
     } catch (err) {
       console.error('Save prediction error:', err);
