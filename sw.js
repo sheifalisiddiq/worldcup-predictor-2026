@@ -1,4 +1,4 @@
-const CACHE = 'wc26-v3';
+const CACHE = 'wc26-v4';
 const PRECACHE = ['/', '/data.js', '/rings.jsx', '/components.jsx', '/screens.jsx', '/screens2.jsx', '/app.jsx', '/icon.svg'];
 
 self.addEventListener('install', e => {
@@ -15,21 +15,28 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  const url = e.request.url;
-  // Never intercept Firebase or API calls — let the browser handle them.
-  if (url.includes('firebase') || url.includes('/api/') || url.includes('football-data')) {
-    return;
-  }
-  // Network-first: always try the live version, fall back to cache when offline.
-  // This guarantees new deploys reach users instead of being pinned to a stale
-  // cached build (the bug that left old clients on a blank, pre-CSP-fix page).
+  const req = e.request;
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+
+  // Only ever handle our OWN origin. Cross-origin requests (React/Babel on
+  // unpkg, Firebase on gstatic, Google Fonts, flagcdn) must go straight to the
+  // network untouched — re-fetching them inside the SW failed with
+  // net::ERR_FAILED and blanked the app on every second load.
+  if (url.origin !== self.location.origin) return;
+
+  // Don't cache API calls.
+  if (url.pathname.startsWith('/api/')) return;
+
+  // Network-first for same-origin assets, cache fallback when offline.
   e.respondWith(
-    fetch(e.request)
+    fetch(req)
       .then(res => {
         const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
         return res;
       })
-      .catch(() => caches.match(e.request))
+      .catch(() => caches.match(req))
   );
 });
