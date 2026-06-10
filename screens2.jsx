@@ -1,88 +1,181 @@
 /* Screens part 2: Leaderboard + Profile */
 const { useState: useS2, useMemo: useM2, useEffect: useE2, useRef: useR2 } = React;
 
+/* ── Medal colors for podium ── */
+const MEDAL = ['#C9A427','#9BA8B4','#CD8B5A'];
+const MEDAL_ACCENT = ['#1144CC','#E8192C','#7B2CBF']; // podium base accent per rank
+
 /* =================== LEADERBOARD =================== */
 function Leaderboard() {
   const [scope, setScope] = useS2('Global');
   const [mounted, setMounted] = useS2(false);
+  const [users, setUsers] = useS2([]);
+  const [lbLoading, setLbLoading] = useS2(true);
   useE2(() => { const t = setTimeout(() => setMounted(true), 100); return () => clearTimeout(t); }, []);
 
-  const users = WC.users;
+  useE2(() => {
+    const unsub = window.fbDb.collection('users')
+      .orderBy('totalPoints', 'desc')
+      .limit(50)
+      .onSnapshot(snap => {
+        const list = snap.docs.map((doc, i) => {
+          const d = doc.data();
+          return {
+            uid:         d.uid,
+            displayName: d.displayName || 'Player',
+            photo:       d.photoURL || '',
+            favCode:     WC.teams[d.favTeam] ? WC.teams[d.favTeam].code : 'ar',
+            points:      d.totalPoints || 0,
+            exact:       d.exactScores || 0,
+            played:      (d.exactScores || 0) + (d.correctResults || 0),
+            rank:        i + 1,
+            isMe:        d.uid === (WC.me && WC.me.uid),
+          };
+        });
+        setUsers(list);
+        setLbLoading(false);
+      }, () => setLbLoading(false));
+    return () => unsub();
+  }, []);
+
   const top3 = users.slice(0, 3);
   const rest = users.slice(3);
-  const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean);
-  const heights = { 0: 96, 1: 130, 2: 78 };
-  const medals = ['var(--cup-gold)', '#C0C6CE', '#CD8B5A'];
+  const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean); // 2nd, 1st, 3rd
+  const podiumHeights = [88, 122, 72];
 
   const meUser = users.find(u => u.isMe);
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', position: 'relative', background: 'var(--bg)', containerType: 'inline-size' }}>
+    <div style={{ height:'100%', overflowY:'auto', position:'relative',
+      background:'var(--bg)', containerType:'inline-size' }}>
       <RingsBackground intensity="subtle" seed={7} />
-      <div style={{ position: 'relative', padding: '18px 16px 30px' }}>
+      <div style={{ position:'relative', padding:'18px 16px 30px' }}>
         <ScreenTitle kicker="GLOBAL TABLE · LIVE" title="LEADERBOARD" />
 
-        {/* Your position banner */}
+        {/* Your rank banner */}
         {meUser && (
-          <div className="heavy" style={{ background: 'var(--samba-yellow)', color: 'var(--cup-black)',
-            padding: '8px 14px', border: '3px solid var(--line)', boxShadow: '3px 3px 0 0 var(--shadow)',
-            fontSize: 13, letterSpacing: '.05em', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span className="display" style={{ fontSize: 28 }}>#{meUser.rank}</span>
-            <div>
-              <div>YOUR CURRENT RANK</div>
-              <div className="mono" style={{ fontSize: 11, fontWeight: 700 }}>{meUser.points} pts · {meUser.exact} exact</div>
+          <div style={{
+            display:'flex', alignItems:'center', gap:14,
+            background:'#FFC800', color:'#000',
+            padding:'10px 16px', border:'3px solid #000',
+            boxShadow:'5px 5px 0 0 #000', marginBottom:16,
+          }}>
+            <div className="display" style={{ fontSize:40, lineHeight:.82, color:'#000' }}>
+              #{meUser.rank}
+            </div>
+            <div style={{ flex:1 }}>
+              <div className="heavy" style={{ fontSize:13, letterSpacing:'.06em' }}>YOUR CURRENT RANK</div>
+              <div className="mono" style={{ fontSize:11, fontWeight:700, marginTop:2 }}>
+                {meUser.points} pts · {meUser.exact} exact
+              </div>
             </div>
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-          {['Global', 'Friends'].map((s) => {
+        {/* Scope tabs */}
+        <div style={{ display:'flex', gap:0, marginBottom:20, border:'3px solid #000', overflow:'hidden',
+          boxShadow:'4px 4px 0 0 #000', width:'fit-content' }}>
+          {['Global','Friends'].map((s, i) => {
             const on = s === scope;
-            return <button key={s} onClick={() => setScope(s)} className="heavy"
-              style={{ padding: '8px 16px', fontSize: 13, border: '3px solid var(--line)', letterSpacing: '.04em',
-                background: on ? 'var(--cup-blue)' : 'var(--panel)', color: on ? '#fff' : 'var(--ink)',
-                boxShadow: on ? '3px 3px 0 0 var(--shadow)' : 'none', transition: 'all .14s' }}>{s.toUpperCase()}</button>;
+            return (
+              <button key={s} onClick={() => setScope(s)} className="heavy"
+                style={{ padding:'9px 20px', fontSize:12, letterSpacing:'.06em',
+                  borderRight: i === 0 ? '3px solid #000' : 'none',
+                  background: on ? '#1144CC' : 'transparent',
+                  color: on ? '#fff' : 'var(--ink)',
+                  transition:'background .12s, color .12s',
+                }}>{s.toUpperCase()}</button>
+            );
           })}
         </div>
 
         {scope === 'Friends' ? (
           <EmptyState title="NO FRIENDS YET" sub="Share your invite link to start a private league." emoji="🤝" />
+        ) : lbLoading ? (
+          <div style={{ display:'grid', gap:8 }}>
+            {[0,1,2,3,4].map(i => <Skeleton key={i} h={60} />)}
+          </div>
+        ) : users.length === 0 ? (
+          <EmptyState title="NO PLAYERS YET" sub="Be the first to sign in and make predictions!" emoji="🏆" />
         ) : (
           <>
-            {/* Podium */}
-            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 10, marginBottom: 22 }}>
-              {podiumOrder.map((u, i) => {
-                const realRank = u.rank;
-                const medal = medals[realRank - 1] || 'var(--muted)';
-                const podiumH = heights[i];
+            {/* Podium — three columns with brand color pedestals */}
+            <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'center',
+              gap:8, marginBottom:24, padding:'0 8px' }}>
+              {podiumOrder.map((u, colIdx) => {
+                const realRank = u.rank; // 1, 2, or 3
+                const pedH = podiumHeights[colIdx];
+                const medalColor = MEDAL[realRank - 1];
+                const baseColor = MEDAL_ACCENT[realRank - 1];
+                const isFirst = realRank === 1;
                 return (
-                  <div key={u.uid} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, maxWidth: 120,
-                    opacity: mounted ? 1 : 0, transform: mounted ? 'none' : 'translateY(30px)',
-                    transition: `opacity .5s ${i * .12}s, transform .5s ${i * .12}s` }}>
-                    <div style={{ position: 'relative', marginBottom: 8 }}>
-                      <img src={u.photo} alt={u.displayName} style={{ width: realRank === 1 ? 64 : 52, height: realRank === 1 ? 64 : 52,
-                        objectFit: 'cover', border: '3px solid var(--line)', boxShadow: '3px 3px 0 0 var(--shadow)',
-                        display: 'block' }} />
-                      {realRank === 1 && <div style={{ position: 'absolute', top: -18, left: '50%', transform: 'translateX(-50%)', fontSize: 24, animation: 'floaty 3s infinite' }}>👑</div>}
+                  <div key={u.uid} style={{
+                    display:'flex', flexDirection:'column', alignItems:'center',
+                    flex:1, maxWidth:130,
+                    opacity: mounted ? 1 : 0,
+                    transform: mounted ? 'none' : 'translateY(24px)',
+                    transition:`opacity .45s ${colIdx * .12}s, transform .45s ${colIdx * .12}s`,
+                  }}>
+                    {/* Avatar */}
+                    <div style={{ position:'relative', marginBottom:8 }}>
+                      {isFirst && (
+                        <div style={{ position:'absolute', top:-20, left:'50%', transform:'translateX(-50%)',
+                          fontSize:22, animation:'floaty 3s ease-in-out infinite', lineHeight:1 }}>👑</div>
+                      )}
+                      {u.photo ? (
+                        <img src={u.photo} alt={u.displayName} style={{
+                          width: isFirst ? 62 : 50, height: isFirst ? 62 : 50,
+                          objectFit:'cover', border:'3px solid #000',
+                          boxShadow:'3px 3px 0 0 #000', display:'block',
+                        }} />
+                      ) : (
+                        <div style={{ width: isFirst ? 62 : 50, height: isFirst ? 62 : 50,
+                          background:'var(--chip)', border:'3px solid #000', display:'grid',
+                          placeItems:'center', fontSize:22 }}>👤</div>
+                      )}
+                      {/* Rank badge on avatar */}
+                      <div style={{ position:'absolute', bottom:-6, right:-6, width:22, height:22,
+                        background:medalColor, border:'2px solid #000',
+                        display:'grid', placeItems:'center',
+                        boxShadow:'2px 2px 0 0 #000' }}>
+                        <span className="mono" style={{ fontSize:11, fontWeight:800, color:'#000', lineHeight:1 }}>
+                          {realRank}
+                        </span>
+                      </div>
                     </div>
-                    <div className="heavy" style={{ fontSize: 12, color: 'var(--ink)', textAlign: 'center', lineHeight: 1, marginBottom: 6, maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {u.displayName.split(' ')[0]}</div>
-                    <div className="bd" style={{ width: '100%', height: podiumH, background: medal, borderBottom: 'none',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', paddingTop: 8,
-                      boxShadow: '4px 4px 0 0 var(--shadow)' }}>
-                      <div className="display" style={{ fontSize: 26, color: 'var(--cup-black)' }}>{realRank}</div>
-                      <div className="mono" style={{ fontSize: 16, fontWeight: 800, color: 'var(--cup-black)' }}>
+
+                    {/* Name */}
+                    <div className="heavy" style={{ fontSize:12, color:'var(--ink)', textAlign:'center',
+                      lineHeight:1.1, marginBottom:8, maxWidth:100,
+                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {u.displayName.split(' ')[0]}
+                    </div>
+
+                    {/* Pedestal */}
+                    <div className="bd" style={{
+                      width:'100%', height:pedH,
+                      background:baseColor,
+                      boxShadow:'4px 4px 0 0 #000',
+                      display:'flex', flexDirection:'column', alignItems:'center',
+                      justifyContent:'center', gap:2,
+                      position:'relative', overflow:'hidden',
+                    }}>
+                      {/* Hatch texture on pedestal */}
+                      <div className="hatch" style={{ position:'absolute', inset:0, pointerEvents:'none' }} />
+                      <div className="mono" style={{ fontSize:18, fontWeight:800,
+                        color:'#fff', position:'relative', zIndex:1 }}>
                         <AnimNum value={u.points} />
                       </div>
-                      <div className="mono" style={{ fontSize: 9, fontWeight: 700, color: 'rgba(10,10,10,.6)' }}>PTS</div>
+                      <div className="mono" style={{ fontSize:9, fontWeight:700,
+                        color:'rgba(255,255,255,.6)', letterSpacing:'.1em', position:'relative', zIndex:1 }}>PTS</div>
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* List */}
-            <div style={{ display: 'grid', gap: 8 }}>
+            {/* Rest of list */}
+            <div style={{ display:'grid', gap:6 }}>
               {rest.map((u, i) => <LeaderRow key={u.uid} u={u} index={i} mounted={mounted} />)}
             </div>
           </>
@@ -99,47 +192,74 @@ function LeaderRow({ u, index, mounted }) {
     <div className="bd"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px',
-        background: me ? 'var(--samba-yellow)' : 'var(--panel)', borderWidth: me ? 3 : 2,
-        boxShadow: me ? '4px 4px 0 0 var(--shadow)' : hover ? '3px 3px 0 0 var(--shadow)' : 'none',
+      style={{
+        display:'flex', alignItems:'center', gap:12, padding:'9px 13px',
+        background: me ? '#FFC800' : 'var(--panel)',
+        borderWidth: me ? 3 : 2,
+        boxShadow: me ? '4px 4px 0 0 #000' : hover ? '3px 3px 0 0 var(--shadow)' : 'none',
         transform: hover && !me ? 'translate(-1px,-1px)' : 'none',
-        transition: 'transform .14s, box-shadow .14s, opacity .5s, translateY .5s',
+        transition:'transform .14s, box-shadow .14s, opacity .5s',
         opacity: mounted ? 1 : 0,
-        animationDelay: `${index * 0.03}s`,
+        borderLeft: `4px solid ${me ? '#E8192C' : u.rank <= 3 ? MEDAL[u.rank-1] : 'var(--hair)'}`,
       }}>
-      <div className="mono" style={{ width: 26, textAlign: 'center', fontSize: 16, fontWeight: 800,
-        color: me ? 'var(--cup-black)' : u.rank <= 3 ? 'var(--cup-gold)' : 'var(--muted)' }}>{u.rank}</div>
-      <img src={u.photo} alt="" style={{ width: 38, height: 38, objectFit: 'cover', border: '2px solid var(--line)', borderRadius: 0 }} />
-      <Flag code={u.favCode} size={24} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="heavy" style={{ fontSize: 14, color: me ? 'var(--cup-black)' : 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <div className="mono" style={{ width:28, textAlign:'center', fontSize:15, fontWeight:800,
+        color: me ? '#000' : u.rank <= 3 ? '#C9A427' : 'var(--muted)' }}>{u.rank}</div>
+      {u.photo ? (
+        <img src={u.photo} alt="" style={{ width:36, height:36, objectFit:'cover',
+          border:'2px solid var(--line)' }} />
+      ) : (
+        <div style={{ width:36, height:36, background:'var(--chip)', border:'2px solid var(--line)',
+          display:'grid', placeItems:'center', fontSize:17 }}>👤</div>
+      )}
+      <Flag code={u.favCode} size={22} />
+      <div style={{ flex:1, minWidth:0 }}>
+        <div className="heavy" style={{ fontSize:14, color: me ? '#000' : 'var(--ink)',
+          whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
           {u.displayName}
-          {me && <span style={{ marginLeft: 6, fontSize: 10, background: 'var(--cup-red)', color: '#fff', padding: '2px 6px' }}>YOU</span>}
+          {me && (
+            <span style={{ marginLeft:7, fontSize:10, background:'#E8192C', color:'#fff',
+              padding:'2px 7px', letterSpacing:'.04em' }}>YOU</span>
+          )}
         </div>
-        <div className="mono" style={{ fontSize: 10, color: me ? 'rgba(10,10,10,.6)' : 'var(--muted)', fontWeight: 600 }}>
+        <div className="mono" style={{ fontSize:10, color: me ? 'rgba(0,0,0,.55)' : 'var(--muted)', fontWeight:600 }}>
           {u.exact} exact · {u.played} played
         </div>
       </div>
-      <div style={{ textAlign: 'right' }}>
-        <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: me ? 'var(--cup-black)' : 'var(--ink)' }}>{u.points}</div>
-        <div className="mono" style={{ fontSize: 9, fontWeight: 600, color: me ? 'rgba(10,10,10,.5)' : 'var(--muted)' }}>PTS</div>
+      <div style={{ textAlign:'right' }}>
+        <div className="mono" style={{ fontSize:20, fontWeight:800, color: me ? '#000' : 'var(--ink)' }}>
+          {u.points}
+        </div>
+        <div className="mono" style={{ fontSize:9, fontWeight:600,
+          color: me ? 'rgba(0,0,0,.45)' : 'var(--muted)', letterSpacing:'.08em' }}>PTS</div>
       </div>
     </div>
   );
 }
 
 /* =================== PROFILE =================== */
-function Profile({ predictions, onOpen }) {
-  const me = WC.users.find((u) => u.isMe);
+function Profile({ predictions, onOpen, matches }) {
+  const matchData = matches && matches.length > 0 ? matches : WC.matches;
   const [tab, setTab] = useS2('history');
   const [mounted, setMounted] = useS2(false);
+  const [userRank, setUserRank] = useS2(null);
   useE2(() => { const t = setTimeout(() => setMounted(true), 80); return () => clearTimeout(t); }, []);
+
+  useE2(() => {
+    if (!WC.me || !WC.me.uid) return;
+    window.fbDb.collection('users').doc(WC.me.uid).get().then(snap => {
+      if (!snap.exists) return;
+      const myPts = snap.data().totalPoints || 0;
+      window.fbDb.collection('users').where('totalPoints', '>', myPts).get().then(s => {
+        setUserRank(s.size + 1);
+      }).catch(() => {});
+    }).catch(() => {});
+  }, []);
 
   const stats = useM2(() => {
     let total = 0, exact = 0, result = 0, played = 0, picks = 0;
     Object.entries(predictions).forEach(([id, p]) => {
-      picks++;
-      const m = WC.matches.find((x) => x.id === id);
+      if (p.a != null) picks++;
+      const m = matchData.find((x) => x.id === id);
       if (m && m.status === 'finished') {
         played++;
         const pts = WC.pointsFor(p, m);
@@ -149,25 +269,30 @@ function Profile({ predictions, onOpen }) {
     });
     const acc = played ? Math.round(((exact + result) / played) * 100) : 0;
     return { total, exact, result, played, picks, acc };
-  }, [predictions]);
+  }, [predictions, matchData]);
 
   const history = useM2(() => {
     return Object.entries(predictions)
-      .map(([id, p]) => ({ m: WC.matches.find((x) => x.id === id), p }))
+      .map(([id, p]) => ({ m: matchData.find((x) => x.id === id), p }))
       .filter((x) => x.m && x.m.status === 'finished')
       .sort((a, b) => new Date(b.m.kickoff) - new Date(a.m.kickoff));
-  }, [predictions]);
+  }, [predictions, matchData]);
 
   const upcoming = useM2(() => {
     return Object.entries(predictions)
-      .map(([id, p]) => ({ m: WC.matches.find((x) => x.id === id), p }))
+      .map(([id, p]) => ({ m: matchData.find((x) => x.id === id), p }))
       .filter((x) => x.m && x.m.status === 'scheduled')
       .sort((a, b) => new Date(a.m.kickoff) - new Date(b.m.kickoff))
       .slice(0, 10);
-  }, [predictions]);
+  }, [predictions, matchData]);
+
+  const me = WC.me || {};
+  const displayName = me.displayName || 'Player';
+  const photo = me.photo || '';
+  const favTeam = me.favTeam || 'Argentina';
 
   function shareProfile() {
-    const text = `🏆 I'm rank #${me?.rank} in the WC2026 Predictor with ${stats.total} pts and ${stats.exact} exact scores! #WorldCup2026`;
+    const text = `🏆 I'm rank #${userRank || '?'} in the WC2026 Predictor with ${stats.total} pts and ${stats.exact} exact scores! #WorldCup2026`;
     if (navigator.share) {
       navigator.share({ title: 'My WC2026 Profile', text }).catch(() => {});
     } else {
@@ -175,118 +300,155 @@ function Profile({ predictions, onOpen }) {
     }
   }
 
-  return (
-    <div style={{ height: '100%', overflowY: 'auto', position: 'relative', background: 'var(--bg)', containerType: 'inline-size' }}>
-      <RingsBackground intensity="subtle" seed={9} />
-      <div style={{ position: 'relative', padding: '18px 16px 30px' }}>
+  /* Stat cards — each gets a different WC brand color */
+  const statCards = [
+    { label:'TOTAL POINTS', value:stats.total, color:'#E8192C',    emoji:'⭐' },
+    { label:'ACCURACY',     value:stats.acc+'%', color:'#2CB82A',  emoji:'🎯' },
+    { label:'EXACT SCORES', value:stats.exact,   color:'#C9A427',  emoji:'💎' },
+    { label:'PREDICTIONS',  value:stats.picks,   color:'#1144CC',  emoji:'📊' },
+  ];
 
-        {/* Header card */}
-        <div className="bd hard-lg" style={{ background: 'var(--cup-blue)', padding: 16, marginBottom: 16, position: 'relative', overflow: 'hidden' }}>
-          {/* Stripe pattern */}
-          <div style={{ position: 'absolute', inset: 0, opacity: .07,
-            backgroundImage: 'repeating-linear-gradient(45deg, #fff 0, #fff 2px, transparent 2px, transparent 10px)' }}></div>
-          <div style={{ display: 'flex', gap: 14, alignItems: 'center', position: 'relative', zIndex: 1 }}>
-            <div style={{ position: 'relative' }}>
-              <img src={WC.me.photo} alt="" style={{ width: 68, height: 68, objectFit: 'cover', border: '3px solid #fff', boxShadow: '3px 3px 0 0 rgba(0,0,0,.4)', display: 'block' }} />
-              <div style={{ position: 'absolute', bottom: -4, right: -4, width: 22, height: 22,
-                background: 'var(--samba-yellow)', border: '2px solid var(--cup-black)',
-                display: 'grid', placeItems: 'center', fontSize: 12 }}>⚽</div>
+  return (
+    <div style={{ height:'100%', overflowY:'auto', position:'relative',
+      background:'var(--bg)', containerType:'inline-size' }}>
+      <RingsBackground intensity="subtle" seed={9} />
+      <div style={{ position:'relative', padding:'18px 16px 30px' }}>
+
+        {/* Profile header card — navy bg with hatch */}
+        <div className="bd hard-lg" style={{
+          background:'#071A40', padding:18, marginBottom:16,
+          position:'relative', overflow:'hidden',
+        }}>
+          <div className="hatch" style={{ position:'absolute', inset:0, pointerEvents:'none' }} />
+          <div className="wc26-stripe" style={{ position:'absolute', top:0, left:0, width:'100%' }} />
+          <div style={{ display:'flex', gap:14, alignItems:'center', position:'relative', zIndex:1, marginTop:8 }}>
+            <div style={{ position:'relative' }}>
+              {photo ? (
+                <img src={photo} alt="" style={{ width:68, height:68, objectFit:'cover',
+                  border:'3px solid #fff', boxShadow:'4px 4px 0 0 #000', display:'block' }} />
+              ) : (
+                <div style={{ width:68, height:68, background:'rgba(255,255,255,.15)',
+                  border:'3px solid #fff', display:'grid', placeItems:'center', fontSize:32 }}>👤</div>
+              )}
+              <div style={{ position:'absolute', bottom:-5, right:-5, width:22, height:22,
+                background:'#FFC800', border:'2px solid #000', display:'grid', placeItems:'center', fontSize:12 }}>⚽</div>
             </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="display" style={{ fontSize: 26, color: '#fff', lineHeight: .9 }}>{WC.me.displayName}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 6 }}>
-                <Flag code={WC.teams[WC.me.favTeam]?.code} size={22} />
-                <span className="mono" style={{ fontSize: 11, color: 'rgba(255,255,255,.85)', fontWeight: 600 }}>{WC.me.favTeam}</span>
+            <div style={{ minWidth:0, flex:1 }}>
+              <div className="display" style={{ fontSize:28, color:'#FDFCFA', lineHeight:.88 }}>{displayName}</div>
+              <div style={{ display:'flex', alignItems:'center', gap:7, marginTop:7 }}>
+                <Flag code={WC.teams[favTeam]?.code} size={22} />
+                <span className="mono" style={{ fontSize:11, color:'rgba(255,255,255,.7)', fontWeight:600 }}>{favTeam}</span>
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, zIndex: 1 }}>
-              <div className="heavy" style={{ background: 'var(--cup-gold)', color: 'var(--cup-black)',
-                border: '3px solid var(--line)', padding: '6px 10px', textAlign: 'center' }}>
-                <div className="mono" style={{ fontSize: 9, fontWeight: 700 }}>RANK</div>
-                <div className="display" style={{ fontSize: 24, lineHeight: .8 }}>#{me?.rank}</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
+              <div className="bd" style={{
+                background:'#C9A427', color:'#000', padding:'7px 11px',
+                textAlign:'center', boxShadow:'3px 3px 0 0 #000',
+              }}>
+                <div className="mono" style={{ fontSize:9, fontWeight:800, letterSpacing:'.09em' }}>RANK</div>
+                <div className="display" style={{ fontSize:26, lineHeight:.82 }}>#{userRank || '—'}</div>
               </div>
-              <button onClick={shareProfile} className="heavy" style={{ background: '#fff', color: 'var(--cup-black)',
-                border: '2px solid var(--line)', padding: '5px 8px', fontSize: 10, letterSpacing: '.04em' }}>
-                SHARE ↗
-              </button>
+              <button onClick={shareProfile} className="heavy" style={{
+                background:'#fff', color:'#000', border:'2px solid #000',
+                padding:'6px 9px', fontSize:10, letterSpacing:'.05em',
+                boxShadow:'2px 2px 0 0 #000',
+              }}>SHARE ↗</button>
             </div>
           </div>
         </div>
 
-        {/* Stat grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 18 }}>
-          {[
-            { label: 'TOTAL POINTS', value: stats.total, color: 'var(--cup-red)', emoji: '⭐' },
-            { label: 'ACCURACY', value: stats.acc + '%', color: 'var(--cup-green)', emoji: '🎯' },
-            { label: 'EXACT SCORES', value: stats.exact, color: 'var(--cup-gold)', emoji: '💎' },
-            { label: 'PREDICTIONS', value: stats.picks, color: 'var(--cup-blue)', emoji: '📊' },
-          ].map(({ label, value, color, emoji }, i) => (
-            <div key={label} className="bd hard" style={{ background: 'var(--panel)', padding: '14px',
-              borderTop: `6px solid ${color}`,
-              opacity: mounted ? 1 : 0, transform: mounted ? 'none' : 'translateY(10px)',
-              transition: `opacity .4s ${i * .08}s, transform .4s ${i * .08}s` }}>
-              <div style={{ fontSize: 22, marginBottom: 4 }}>{emoji}</div>
-              <div className="display" style={{ fontSize: 34, color: 'var(--ink)', lineHeight: .85 }}>
+        {/* Stat grid — 4 cards, each its own color top-border + shadow */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:10, marginBottom:18 }}>
+          {statCards.map(({ label, value, color, emoji }, i) => (
+            <div key={label} className="bd hard" style={{
+              background:'var(--panel)', padding:'14px',
+              borderTop:`6px solid ${color}`,
+              opacity: mounted ? 1 : 0,
+              transform: mounted ? 'none' : 'translateY(10px)',
+              transition:`opacity .38s ${i * .07}s, transform .38s ${i * .07}s`,
+            }}>
+              <div style={{ fontSize:22, marginBottom:5 }}>{emoji}</div>
+              <div className="display" style={{ fontSize:36, color:'var(--ink)', lineHeight:.85 }}>
                 {typeof value === 'number' ? <AnimNum value={value} /> : value}
               </div>
-              <div className="heavy" style={{ fontSize: 10, letterSpacing: '.08em', color: 'var(--muted)', marginTop: 4 }}>{label}</div>
+              <div className="heavy" style={{ fontSize:10, letterSpacing:'.1em', color:'var(--muted)', marginTop:5 }}>
+                {label}
+              </div>
             </div>
           ))}
         </div>
 
-        {/* Accuracy bar */}
-        <div className="bd" style={{ background: 'var(--panel)', padding: 14, marginBottom: 18 }}>
-          <div className="heavy" style={{ fontSize: 11, letterSpacing: '.08em', color: 'var(--muted)', marginBottom: 8 }}>
+        {/* Results breakdown bar */}
+        <div className="bd" style={{ background:'var(--panel)', padding:14, marginBottom:18 }}>
+          <div className="heavy" style={{ fontSize:11, letterSpacing:'.09em', color:'var(--muted)', marginBottom:8 }}>
             RESULTS BREAKDOWN · {stats.played} SETTLED
           </div>
-          <div className="bd" style={{ display: 'flex', borderWidth: 2, height: 28, overflow: 'hidden' }}>
-            <div style={{ width: (stats.played ? (stats.exact / stats.played) * 100 : 0) + '%', background: 'var(--cup-green)', transition: 'width 1s ease' }}></div>
-            <div style={{ width: (stats.played ? (stats.result / stats.played) * 100 : 0) + '%', background: 'var(--samba-yellow)', transition: 'width 1s ease .1s' }}></div>
-            <div style={{ flex: 1, background: 'var(--chip)' }}></div>
+          <div className="bd" style={{ display:'flex', borderWidth:2, height:30, overflow:'hidden' }}>
+            <div style={{ width:(stats.played ? (stats.exact/stats.played)*100 : 0)+'%',
+              background:'#2CB82A', transition:'width 1s ease' }} />
+            <div style={{ width:(stats.played ? (stats.result/stats.played)*100 : 0)+'%',
+              background:'#FFC800', transition:'width 1s ease .1s' }} />
+            <div style={{ flex:1, background:'var(--chip)' }} />
           </div>
-          <div style={{ display: 'flex', gap: 14, marginTop: 8, flexWrap: 'wrap' }}>
-            {[['var(--cup-green)', `${stats.exact} exact`], ['var(--samba-yellow)', `${stats.result} result`], ['var(--chip)', `${Math.max(0, stats.played - stats.exact - stats.result)} missed`]].map(([c, t]) => (
-              <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--ink-soft)', fontWeight: 600 }}>
-                <span style={{ width: 12, height: 12, background: c, border: '1.5px solid var(--line)', display: 'block' }}></span>{t}
+          <div style={{ display:'flex', gap:14, marginTop:8, flexWrap:'wrap' }}>
+            {[
+              ['#2CB82A', `${stats.exact} exact`],
+              ['#FFC800', `${stats.result} result`],
+              ['var(--chip)', `${Math.max(0, stats.played - stats.exact - stats.result)} missed`],
+            ].map(([c, t]) => (
+              <span key={t} style={{ display:'inline-flex', alignItems:'center', gap:6,
+                fontSize:11, color:'var(--ink-soft)', fontWeight:600 }}>
+                <span style={{ width:12, height:12, background:c, border:'1.5px solid var(--line)', display:'block' }} />
+                {t}
               </span>
             ))}
           </div>
         </div>
 
-        {/* Tab bar */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
-          {[['history','📋 HISTORY'],['upcoming','🔮 UPCOMING']].map(([v, label]) => (
+        {/* History / Upcoming tabs */}
+        <div style={{ display:'flex', gap:0, marginBottom:14, border:'3px solid #000',
+          overflow:'hidden', width:'fit-content', boxShadow:'4px 4px 0 0 #000' }}>
+          {[['history','📋 HISTORY'],['upcoming','🔮 UPCOMING']].map(([v, label], i) => (
             <button key={v} onClick={() => setTab(v)} className="heavy" style={{
-              padding: '8px 14px', fontSize: 11, border: '3px solid var(--line)', letterSpacing: '.05em',
-              background: tab === v ? 'var(--cup-black)' : 'var(--panel)',
+              padding:'8px 16px', fontSize:11, letterSpacing:'.06em',
+              borderRight: i === 0 ? '3px solid #000' : 'none',
+              background: tab === v ? '#0A0A18' : 'transparent',
               color: tab === v ? '#fff' : 'var(--ink)',
-              boxShadow: tab === v ? '3px 3px 0 0 var(--shadow)' : 'none',
+              transition:'background .12s',
             }}>{label}</button>
           ))}
         </div>
 
         {tab === 'history' && (
-          <div style={{ display: 'grid', gap: 10, animation: 'fadeIn .2s' }}>
+          <div style={{ display:'grid', gap:8, animation:'fadeIn .2s' }}>
             {history.length === 0 && <EmptyState title="NO RESULTS YET" sub="Your settled predictions will show up here." emoji="📋" />}
             {history.map(({ m, p }) => {
               const pts = WC.pointsFor(p, m);
               const isExact = pts >= 3;
+              const accent = isExact ? '#2CB82A' : pts >= 1 ? '#FFC800' : 'var(--chip)';
               return (
-                <div key={m.id} onClick={() => onOpen(m.id)} className="bd" style={{ background: 'var(--panel)', padding: '10px 12px',
-                  display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', borderWidth: 2,
-                  borderLeft: `5px solid ${isExact ? 'var(--cup-green)' : pts >= 1 ? 'var(--samba-yellow)' : 'var(--chip)'}`,
-                  transition: 'transform .12s, box-shadow .12s',
+                <div key={m.id} onClick={() => onOpen(m.id)} className="bd" style={{
+                  background:'var(--panel)', padding:'10px 13px',
+                  display:'flex', alignItems:'center', gap:10, cursor:'pointer', borderWidth:2,
+                  borderLeft:`5px solid ${accent}`,
+                  transition:'transform .12s, box-shadow .12s',
                 }}
                   onMouseEnter={e => { e.currentTarget.style.transform='translate(-2px,-2px)'; e.currentTarget.style.boxShadow='4px 4px 0 0 var(--shadow)'; }}
                   onMouseLeave={e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow=''; }}
                 >
                   <Flag code={WC.teams[m.teamA]?.code} size={26} />
-                  <span className="mono" style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>{m.scoreA}–{m.scoreB}</span>
+                  <span className="mono" style={{ fontSize:13, fontWeight:800, color:'var(--ink)' }}>
+                    {m.scoreA}–{m.scoreB}
+                  </span>
                   <Flag code={WC.teams[m.teamB]?.code} size={26} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="heavy" style={{ fontSize: 11, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {m.teamA} v {m.teamB}</div>
-                    <div className="mono" style={{ fontSize: 10, color: 'var(--muted)' }}>your pick: {p.a}–{p.b}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div className="heavy" style={{ fontSize:11, color:'var(--ink)',
+                      whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                      {m.teamA} v {m.teamB}
+                    </div>
+                    <div className="mono" style={{ fontSize:10, color:'var(--muted)' }}>
+                      your pick: {p.a}–{p.b}
+                    </div>
                   </div>
                   <PointsChip pts={pts} />
                 </div>
@@ -296,27 +458,36 @@ function Profile({ predictions, onOpen }) {
         )}
 
         {tab === 'upcoming' && (
-          <div style={{ display: 'grid', gap: 10, animation: 'fadeIn .2s' }}>
+          <div style={{ display:'grid', gap:8, animation:'fadeIn .2s' }}>
             {upcoming.length === 0 && <EmptyState title="NO UPCOMING PICKS" sub="Head to Matches and lock in your predictions!" emoji="🔮" />}
             {upcoming.map(({ m, p }) => {
               const until = timeUntil(m.kickoff);
               return (
-                <div key={m.id} onClick={() => onOpen(m.id)} className="bd" style={{ background: 'var(--panel)', padding: '10px 12px',
-                  display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', borderWidth: 2,
-                  transition: 'transform .12s, box-shadow .12s',
+                <div key={m.id} onClick={() => onOpen(m.id)} className="bd" style={{
+                  background:'var(--panel)', padding:'10px 13px',
+                  display:'flex', alignItems:'center', gap:10, cursor:'pointer', borderWidth:2,
+                  transition:'transform .12s, box-shadow .12s',
                 }}
                   onMouseEnter={e => { e.currentTarget.style.transform='translate(-2px,-2px)'; e.currentTarget.style.boxShadow='4px 4px 0 0 var(--shadow)'; }}
                   onMouseLeave={e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow=''; }}
                 >
                   <Flag code={WC.teams[m.teamA]?.code} size={26} />
-                  <span className="mono" style={{ fontSize: 13, fontWeight: 800, color: 'var(--samba-yellow)' }}>{p.a}–{p.b}</span>
+                  <span className="mono" style={{ fontSize:13, fontWeight:800, color:'#FFC800' }}>
+                    {p.a}–{p.b}
+                  </span>
                   <Flag code={WC.teams[m.teamB]?.code} size={26} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="heavy" style={{ fontSize: 11, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {m.teamA} v {m.teamB}</div>
-                    <div className="mono" style={{ fontSize: 10, color: 'var(--muted)' }}>kicks off in {until || 'soon'}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div className="heavy" style={{ fontSize:11, color:'var(--ink)',
+                      whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                      {m.teamA} v {m.teamB}
+                    </div>
+                    <div className="mono" style={{ fontSize:10, color:'var(--muted)' }}>
+                      kicks off in {until || 'soon'}
+                    </div>
                   </div>
-                  <span className="heavy" style={{ fontSize: 10, background: 'var(--cup-blue)', color: '#fff', padding: '3px 7px', border: '2px solid var(--line)', letterSpacing: '.04em' }}>EDIT →</span>
+                  <span className="heavy" style={{ fontSize:10, background:'#1144CC', color:'#fff',
+                    padding:'4px 9px', border:'2px solid #000', letterSpacing:'.05em',
+                    boxShadow:'2px 2px 0 0 #000' }}>EDIT →</span>
                 </div>
               );
             })}

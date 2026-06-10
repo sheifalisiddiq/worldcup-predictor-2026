@@ -3,8 +3,8 @@ const { useEffect: useEffectR, useRef: useRefR, useState: useStateR } = React;
 
 function RingsBackground({ intensity = 'bold', seed = 1, parallaxRef = null }) {
   const PALETTE = [
-    '#E63329','#0042A6','#0FA958','#B8E236',
-    '#FEC700','#4FB7E8','#02462E','#D4A437',
+    '#E8192C','#1144CC','#2CB82A','#FFC800',
+    '#00C8E8','#7B2CBF','#C9A427','#066030',
   ];
   const rings = intensity === 'bold' ? 13 : intensity === 'subtle' ? 8 : 11;
   const op = intensity === 'bold' ? 1 : intensity === 'subtle' ? 0.16 : 0.4;

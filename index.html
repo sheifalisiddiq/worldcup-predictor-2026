@@ -1,59 +1,140 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>World Cup 2026 Predictor</title>
-<meta name="description" content="Predict all 104 World Cup 2026 matches. Climb the global table. Joga bonito." />
+<title>FIFA WC26 Predictor — WE ARE 26</title>
+<meta name="description" content="Predict all 104 World Cup 2026 matches. Climb the global table. We Are 26." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Noto+Sans:ital,wght@0,400;0,600;0,700;0,800;0,900;1,900&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --cup-red:#E63329; --cup-blue:#0042A6; --cup-green:#0FA958;
-    --cup-lime:#B8E236; --cup-gold:#D4A437; --cup-black:#0A0A0A;
-    --cup-cream:#F5F1E8; --samba-yellow:#FEC700; --samba-green:#02462E;
-    --sky:#4FB7E8;
-    --bg:var(--cup-cream);
-    --panel:#ffffff;
-    --ink:var(--cup-black);
-    --ink-soft:#46443d;
-    --line:var(--cup-black);
-    --shadow:var(--cup-black);
-    --chip:#ffffff;
-    --muted:#8a857a;
-    --hair:rgba(10,10,10,.12);
+    /* ── FIFA World Cup 2026 Official Brand Palette ── */
+    --wc-red:         #E8192C;
+    --wc-blue:        #1144CC;
+    --wc-cyan:        #00C8E8;
+    --wc-purple:      #7B2CBF;
+    --wc-green:       #2CB82A;
+    --wc-yellow:      #FFC800;
+    --wc-gold:        #C9A427;
+    --wc-navy:        #071A40;
+    --wc-navy-panel:  #0D2254;
+    --wc-cream:       #F4F1EB;
+    --wc-ink:         #0A0A18;
+    --wc-white:       #FDFCFA;
+
+    /* ── Semantic tokens (light theme default) ── */
+    --cup-red:      #E8192C;
+    --cup-blue:     #1144CC;
+    --cup-green:    #2CB82A;
+    --cup-gold:     #C9A427;
+    --cup-black:    #0A0A18;
+    --cup-cream:    #F4F1EB;
+    --samba-yellow: #FFC800;
+    --samba-green:  #066030;
+    --sky:          #00C8E8;
+
+    --bg:       #F4F1EB;
+    --panel:    #FDFCFA;
+    --ink:      #0A0A18;
+    --ink-soft: #363652;
+    --line:     #0A0A18;
+    --shadow:   #0A0A18;
+    --chip:     #ECEAE0;
+    --muted:    #787090;
+    --hair:     rgba(10,10,24,.12);
     --transition-speed: 0.28s;
+
+    /* nav is always dark */
+    --nav-bg:   #040F26;
+    --nav-ink:  #FDFCFA;
   }
+
   [data-theme="dark"] {
-    --bg:#0b0f0c;
-    --panel:#13181a;
-    --ink:#F5F1E8;
-    --ink-soft:#c9c6bd;
-    --line:#000000;
-    --shadow:#000000;
-    --chip:#1b2124;
-    --muted:#7d847f;
-    --hair:rgba(245,241,232,.14);
+    --bg:       #071A40;
+    --panel:    #0D2254;
+    --ink:      #F4F1EB;
+    --ink-soft: #B0B8D0;
+    --line:     #000000;
+    --shadow:   #000000;
+    --chip:     #152A5C;
+    --muted:    #6A7A9A;
+    --hair:     rgba(244,241,235,.14);
   }
 
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body { margin:0; padding:0; }
   body {
-    font-family:'Inter',system-ui,sans-serif;
-    background:#1a1a1a;
+    font-family:'Noto Sans',system-ui,sans-serif;
+    background:var(--bg);
     color:var(--ink);
     overflow:hidden;
   }
   #root { width:100vw; height:100vh; }
 
-  .display { font-family:'Anton',sans-serif; text-transform:uppercase; letter-spacing:-.01em; font-weight:400; line-height:.9; }
-  .heavy { font-family:'Archivo',sans-serif; font-weight:900; }
-  .mono { font-family:'JetBrains Mono',monospace; font-variant-numeric:tabular-nums; }
+  /* ── Typography ── */
+  .display {
+    font-family:'Big Shoulders Display',sans-serif;
+    text-transform:uppercase;
+    letter-spacing:-.02em;
+    font-weight:900;
+    line-height:.88;
+  }
+  .heavy { font-family:'Noto Sans',sans-serif; font-weight:800; }
+  .mono  { font-family:'JetBrains Mono',monospace; font-variant-numeric:tabular-nums; }
 
-  .hard { box-shadow:4px 4px 0 0 var(--shadow); }
+  /* ── Border/shadow system (neo-brutalist, no radius) ── */
+  .hard    { box-shadow:4px 4px 0 0 var(--shadow); }
   .hard-lg { box-shadow:6px 6px 0 0 var(--shadow); }
-  .bd { border:3px solid var(--line); }
+  .bd      { border:3px solid var(--line); }
+
+  /* ── WC26 six-color stripe ── */
+  .wc26-stripe {
+    height:5px;
+    flex-shrink:0;
+    background:linear-gradient(90deg,
+      #E8192C 0% 16.66%,
+      #FFC800 16.66% 33.33%,
+      #2CB82A 33.33% 50%,
+      #1144CC 50% 66.66%,
+      #00C8E8 66.66% 83.33%,
+      #7B2CBF 83.33% 100%
+    );
+  }
+
+  /* ── Sunburst background (landing page) ── */
+  .sunburst {
+    background:conic-gradient(from 0deg at 50% 50%,
+      #071A40 0deg 11.25deg,    #0A2050 11.25deg 22.5deg,
+      #071A40 22.5deg 33.75deg, #0A2050 33.75deg 45deg,
+      #071A40 45deg 56.25deg,   #0A2050 56.25deg 67.5deg,
+      #071A40 67.5deg 78.75deg, #0A2050 78.75deg 90deg,
+      #071A40 90deg 101.25deg,  #0A2050 101.25deg 112.5deg,
+      #071A40 112.5deg 123.75deg,#0A2050 123.75deg 135deg,
+      #071A40 135deg 146.25deg, #0A2050 146.25deg 157.5deg,
+      #071A40 157.5deg 168.75deg,#0A2050 168.75deg 180deg,
+      #071A40 180deg 191.25deg, #0A2050 191.25deg 202.5deg,
+      #071A40 202.5deg 213.75deg,#0A2050 213.75deg 225deg,
+      #071A40 225deg 236.25deg, #0A2050 236.25deg 247.5deg,
+      #071A40 247.5deg 258.75deg,#0A2050 258.75deg 270deg,
+      #071A40 270deg 281.25deg, #0A2050 281.25deg 292.5deg,
+      #071A40 292.5deg 303.75deg,#0A2050 303.75deg 315deg,
+      #071A40 315deg 326.25deg, #0A2050 326.25deg 337.5deg,
+      #071A40 337.5deg 348.75deg,#0A2050 348.75deg 360deg
+    );
+  }
+
+  /* ── Diagonal hatch texture (dark surfaces) ── */
+  .hatch {
+    background-image:repeating-linear-gradient(
+      45deg,
+      rgba(255,255,255,.035) 0,
+      rgba(255,255,255,.035) 1px,
+      transparent 1px,
+      transparent 12px
+    );
+  }
 
   ::-webkit-scrollbar { width:8px; height:8px; }
   ::-webkit-scrollbar-thumb { background:var(--ink); border-radius:0; }
@@ -62,19 +143,19 @@
   button { font-family:inherit; cursor:pointer; border:none; background:none; color:inherit; }
   img { display:block; }
 
-  @keyframes pulseSkel { 0%,100%{opacity:.5;} 50%{opacity:.9;} }
-  @keyframes spinSlow { to { transform:rotate(360deg); } }
-  @keyframes floaty { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-6px);} }
-  @keyframes popIn { 0%{ transform:scale(.7); opacity:0;} 60%{ transform:scale(1.08);} 100%{ transform:scale(1); opacity:1;} }
-  @keyframes slideUp { from{ transform:translateY(14px); opacity:0;} to{ transform:translateY(0); opacity:1;} }
-  @keyframes slideInRight { from{ transform:translateX(100%); opacity:0;} to{ transform:translateX(0); opacity:1;} }
-  @keyframes slideInLeft { from{ transform:translateX(-100%); opacity:0;} to{ transform:translateX(0); opacity:1;} }
-  @keyframes fadeIn { from{ opacity:0;} to{ opacity:1;} }
-  @keyframes toastSlide { from{ transform:translateY(80px); opacity:0;} to{ transform:translateY(0); opacity:1;} }
-  @keyframes toastOut { from{ transform:translateY(0); opacity:1;} to{ transform:translateY(80px); opacity:0;} }
-  @keyframes pulse { 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.04); } }
-  @keyframes shimmer { 0%{ background-position:-400px 0; } 100%{ background-position:400px 0; } }
-  @keyframes countUp { from{ opacity:0; transform:translateY(10px);} to{ opacity:1; transform:translateY(0);} }
+  @keyframes pulseSkel  { 0%,100%{opacity:.5;} 50%{opacity:.9;} }
+  @keyframes spinSlow   { to { transform:rotate(360deg); } }
+  @keyframes floaty     { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-8px);} }
+  @keyframes popIn      { 0%{transform:scale(.7);opacity:0;} 60%{transform:scale(1.08);} 100%{transform:scale(1);opacity:1;} }
+  @keyframes slideUp    { from{transform:translateY(20px);opacity:0;} to{transform:translateY(0);opacity:1;} }
+  @keyframes slideInRight { from{transform:translateX(100%);opacity:0;} to{transform:translateX(0);opacity:1;} }
+  @keyframes slideInLeft  { from{transform:translateX(-100%);opacity:0;} to{transform:translateX(0);opacity:1;} }
+  @keyframes fadeIn     { from{opacity:0;} to{opacity:1;} }
+  @keyframes toastSlide { from{transform:translateY(80px);opacity:0;} to{transform:translateY(0);opacity:1;} }
+  @keyframes toastOut   { from{transform:translateY(0);opacity:1;} to{transform:translateY(80px);opacity:0;} }
+  @keyframes pulse      { 0%,100%{transform:scale(1);} 50%{transform:scale(1.04);} }
+  @keyframes shimmer    { 0%{background-position:-400px 0;} 100%{background-position:400px 0;} }
+  @keyframes countUp    { from{opacity:0;transform:translateY(10px);} to{opacity:1;transform:translateY(0);} }
   @keyframes ballBounce { 0%,100%{transform:translateY(0) rotate(0deg);} 25%{transform:translateY(-20px) rotate(-15deg);} 75%{transform:translateY(-8px) rotate(10deg);} }
   @keyframes stripeSlide { from{background-position:0 0;} to{background-position:40px 0;} }
 
@@ -82,37 +163,34 @@
     * { animation-duration:.001ms !important; transition-duration:.001ms !important; }
   }
 
-  /* Toast system */
+  /* ── Toast ── */
   #toast-container {
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
     z-index:9999; display:flex; flex-direction:column; gap:8px; align-items:center;
     pointer-events:none;
   }
   .toast {
-    font-family:'Archivo',sans-serif; font-weight:900;
-    padding:12px 22px; border:3px solid var(--cup-black); font-size:14px;
-    letter-spacing:.04em; text-transform:uppercase; pointer-events:auto;
-    box-shadow:5px 5px 0 0 var(--cup-black); animation:toastSlide .3s cubic-bezier(.34,1.56,.64,1) forwards;
+    font-family:'Noto Sans',sans-serif; font-weight:800;
+    padding:12px 22px; border:3px solid #000; font-size:13px;
+    letter-spacing:.06em; text-transform:uppercase; pointer-events:auto;
+    box-shadow:5px 5px 0 0 #000;
+    animation:toastSlide .3s cubic-bezier(.34,1.56,.64,1) forwards;
     white-space:nowrap;
   }
-  .toast.out { animation:toastOut .25s ease forwards; }
-  .toast-success { background:var(--cup-green); color:#fff; }
-  .toast-info { background:var(--samba-yellow); color:var(--cup-black); }
-  .toast-error { background:var(--cup-red); color:#fff; }
+  .toast.out     { animation:toastOut .25s ease forwards; }
+  .toast-success { background:#2CB82A; color:#fff; }
+  .toast-info    { background:#FFC800; color:#000; }
+  .toast-error   { background:#E8192C; color:#fff; }
 
-  /* Screen transitions */
-  .screen-enter { animation:fadeIn .22s ease forwards; }
+  .screen-enter       { animation:fadeIn .22s ease forwards; }
   .screen-slide-right { animation:slideInRight .25s cubic-bezier(.34,1.1,.64,1) forwards; }
-  .screen-slide-left { animation:slideInLeft .25s cubic-bezier(.34,1.1,.64,1) forwards; }
+  .screen-slide-left  { animation:slideInLeft  .25s cubic-bezier(.34,1.1,.64,1) forwards; }
 
-  /* Live pulse dot */
   .live-dot {
     width:8px; height:8px; border-radius:50%; background:#fff;
     animation:pulseSkel .9s infinite;
-    box-shadow:0 0 0 0 rgba(255,255,255,.6);
   }
 
-  /* Shimmer skeleton */
   .skeleton-shimmer {
     background:linear-gradient(90deg,var(--chip) 25%,rgba(200,200,200,.15) 50%,var(--chip) 75%);
     background-size:400px 100%;
@@ -131,13 +209,12 @@
 
   <!-- Confetti engine -->
   <script>
-  // Tiny confetti engine
   window.fireConfetti = function(opts = {}) {
     const canvas = document.getElementById('confetti-canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    const colors = opts.colors || ['#E63329','#FEC700','#0FA958','#B8E236','#0042A6','#4FB7E8','#D4A437'];
+    const colors = opts.colors || ['#E8192C','#FFC800','#2CB82A','#1144CC','#00C8E8','#7B2CBF','#C9A427'];
     const count = opts.count || 120;
     const origin = opts.origin || { x: 0.5, y: 0.6 };
     const particles = [];
@@ -196,6 +273,11 @@
     }, duration);
   };
   </script>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
 
   <script src="data.js"></script>
   <script type="text/babel" src="rings.jsx"></script>
