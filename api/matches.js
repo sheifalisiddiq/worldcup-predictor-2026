@@ -10,11 +10,17 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Abort the upstream call before Vercel's function timeout fires, so a slow
+  // football-data.org response returns a clean JSON error instead of an HTML 504
+  // (which the client can't JSON.parse and treats as a hard failure).
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
   try {
     const r = await fetch(
       'https://api.football-data.org/v4/competitions/WC/matches?season=2026',
-      { headers: { 'X-Auth-Token': apiKey } }
+      { headers: { 'X-Auth-Token': apiKey }, signal: ctrl.signal }
     );
+    clearTimeout(timer);
     if (!r.ok) {
       const body = await r.text();
       res.status(r.status).json({ error: 'Upstream API error', detail: body });
@@ -41,7 +47,9 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=30');
     res.json({ matches });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    clearTimeout(timer);
+    const msg = e.name === 'AbortError' ? 'Upstream timed out' : e.message;
+    res.status(504).json({ error: msg });
   }
 }
 

@@ -109,22 +109,44 @@ function App() {
 
   useEffect(() => {
     if (!signed) return;
+    let cancelled = false;
     setMatchesLoading(true);
-    fetch('/api/matches')
-      .then(r => r.json())
-      .then(data => {
-        if (data.matches) {
+
+    // Fetch fixtures with retry. A single transient upstream blip (cold start,
+    // football-data.org slow → Vercel 504 HTML) shouldn't wipe the fixtures or
+    // scare the user. Retry a few times with backoff before giving up, and only
+    // toast if we genuinely have no data to show.
+    async function loadMatches(attempt = 0) {
+      try {
+        const r = await fetch('/api/matches', { cache: 'no-store' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        if (cancelled) return;
+        if (data.matches && data.matches.length) {
           WC.matches = data.matches;
           setMatchList(data.matches);
           setMatchesReady(true);
+          setMatchesLoading(false);
+          return;
+        }
+        throw new Error(data.error || 'No matches in response');
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Matches fetch error (attempt ' + (attempt + 1) + '):', err);
+        if (attempt < 2) {
+          setTimeout(() => { if (!cancelled) loadMatches(attempt + 1); }, 1200 * (attempt + 1));
+          return;
         }
         setMatchesLoading(false);
-      })
-      .catch(err => {
-        console.error('Matches fetch error:', err);
-        setMatchesLoading(false);
-        window.toast('Could not load fixtures. Check your API setup.', 'error', 5000);
-      });
+        // Keep any fixtures we already had; only alarm if we have nothing.
+        if (!WC.matches || !WC.matches.length) {
+          window.toast('Could not load fixtures — tap to retry.', 'error', 5000);
+        }
+      }
+    }
+
+    loadMatches();
+    return () => { cancelled = true; };
   }, [signed]);
 
   useEffect(() => {
