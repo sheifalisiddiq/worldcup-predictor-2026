@@ -49,6 +49,11 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
+    window.fbAuth.getRedirectResult().catch(err => {
+      if (err.code && err.code !== 'auth/redirect-cancelled-by-user') {
+        window.toast('Sign-in failed: ' + err.message, 'error', 4000);
+      }
+    });
     const unsub = window.fbAuth.onAuthStateChanged(async (user) => {
       if (user) {
         try {
@@ -218,12 +223,18 @@ function App() {
   }
 
   function signIn() {
-    window.fbAuth.signInWithPopup(window.fbProvider)
-      .catch(err => {
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+      window.fbAuth.signInWithRedirect(window.fbProvider).catch(err => {
+        window.toast('Sign-in failed: ' + err.message, 'error', 4000);
+      });
+    } else {
+      window.fbAuth.signInWithPopup(window.fbProvider).catch(err => {
         if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
           window.toast('Sign-in failed: ' + err.message, 'error', 4000);
         }
       });
+    }
   }
 
   function signOut() {
@@ -333,19 +344,26 @@ function MobileHeader({ theme, setTheme }) {
 
 /* ── Mobile swipe content ── */
 function MobileContent({ openMatch, setOpenMatch, tab, setTab, product }) {
-  const touchStart = useRef(null);
-  function onTouchStart(e) { touchStart.current = e.touches[0].clientX; }
+  const touchStartX = useRef(null);
+  const touchStartY = useRef(null);
+  function onTouchStart(e) {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  }
   function onTouchEnd(e) {
-    if (!touchStart.current || openMatch) return;
-    const dx = e.changedTouches[0].clientX - touchStart.current;
-    if (Math.abs(dx) < 60) return;
+    if (touchStartX.current === null || openMatch) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
+    touchStartX.current = null;
+    touchStartY.current = null;
+    // Ignore if mostly vertical (scroll, not swipe) or too short
+    if (Math.abs(dx) < 60 || dy > Math.abs(dx) * 0.65) return;
     const idx = TAB_ORDER.indexOf(tab);
-    if (dx < -60 && idx < TAB_ORDER.length - 1) setTab(TAB_ORDER[idx + 1]);
-    if (dx >  60 && idx > 0) setTab(TAB_ORDER[idx - 1]);
-    touchStart.current = null;
+    if (dx < 0 && idx < TAB_ORDER.length - 1) setTab(TAB_ORDER[idx + 1]);
+    if (dx > 0 && idx > 0) setTab(TAB_ORDER[idx - 1]);
   }
   return (
-    <div style={{ height:'100%', overflowY:'hidden' }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <div style={{ height:'100%', overflowY:'hidden', touchAction:'pan-y' }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       {product}
     </div>
   );

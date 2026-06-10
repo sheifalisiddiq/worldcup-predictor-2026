@@ -546,7 +546,6 @@ function TeamPicker({ current, onSelect, onClose }) {
         </div>
         <div style={{ padding:'10px 14px', borderBottom:'2px solid var(--hair)' }}>
           <input
-            autoFocus
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search team..."

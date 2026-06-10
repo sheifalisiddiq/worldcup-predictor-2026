@@ -2,7 +2,7 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
 <title>FIFA WC26 Predictor — WE ARE 26</title>
 <meta name="description" content="Predict all 104 World Cup 2026 matches. Climb the global table. We Are 26." />
 <link rel="manifest" href="/manifest.json" />
@@ -78,7 +78,7 @@
     color:var(--ink);
     overflow:hidden;
   }
-  #root { width:100vw; height:100vh; }
+  #root { width:100vw; height:100dvh; }
 
   /* ── Typography ── */
   .display {
@@ -172,7 +172,7 @@
 
   /* ── Toast ── */
   #toast-container {
-    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    position:fixed; bottom:max(24px, env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
     z-index:9999; display:flex; flex-direction:column; gap:8px; align-items:center;
     pointer-events:none;
   }
