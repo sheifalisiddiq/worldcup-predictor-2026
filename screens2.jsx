@@ -5,6 +5,21 @@ const { useState: useS2, useMemo: useM2, useEffect: useE2, useRef: useR2 } = Rea
 const MEDAL = ['#C9A427','#9BA8B4','#CD8B5A'];
 const MEDAL_ACCENT = ['#1144CC','#E8192C','#7B2CBF']; // podium base accent per rank
 
+/* Read all users straight from the RTDB REST endpoint with the signed-in user's
+   ID token. The realtime SDK listener was returning only a stale single (own)
+   row on the live connection even though the account can read every user — a
+   direct REST read reliably returns the full set. */
+async function fetchAllUsersREST() {
+  const user = window.fbAuth && window.fbAuth.currentUser;
+  if (!user) return [];
+  const tok = await user.getIdToken();
+  const base = window.fbDb.ref().toString().replace(/\/+$/, '');
+  const res = await fetch(base + '/users.json?auth=' + encodeURIComponent(tok));
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  return data ? Object.values(data) : [];
+}
+
 /* =================== LEADERBOARD =================== */
 function Leaderboard() {
   const [scope, setScope] = useS2('Global');
@@ -14,37 +29,36 @@ function Leaderboard() {
   useE2(() => { const t = setTimeout(() => setMounted(true), 100); return () => clearTimeout(t); }, []);
 
   useE2(() => {
-    // Read the whole users node and rank client-side. The server-side
-    // orderByChild('totalPoints').limitToLast() query returned only a single row
-    // on the live connection (a plain read returns every user), so sort in JS —
-    // plenty for this leaderboard's size.
-    const ref = window.fbDb.ref('users');
-    const cb = snap => {
-      const raw = [];
-      snap.forEach(child => raw.push(child.val()));
-      raw.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
-      const list = raw.slice(0, 100).map((d, i) => ({
-        uid:         d.uid,
-        displayName: d.displayName || 'Player',
-        photo:       d.photoURL || '',
-        favCode:     WC.teams[d.favTeam] ? WC.teams[d.favTeam].code : 'ar',
-        points:      d.totalPoints || 0,
-        exact:       d.exactScores || 0,
-        played:      (d.exactScores || 0) + (d.correctResults || 0),
-        rank:        i + 1,
-        isMe:        d.uid === (WC.me && WC.me.uid),
-      }));
-      setUsers(list);
-      setLbLoading(false);
-    };
-    const errCb = err => {
-      // Surface the real reason the board is empty instead of failing silently.
-      console.error('Leaderboard read error:', err && err.code, err && err.message);
-      window.toast('Leaderboard error: ' + ((err && err.message) || 'unknown'), 'error', 7000);
-      setLbLoading(false);
-    };
-    ref.on('value', cb, errCb);
-    return () => ref.off('value', cb);
+    // Read via REST (the realtime SDK listener under-returns on this connection)
+    // and rank client-side. Poll so the board stays roughly live.
+    let cancelled = false;
+    async function load() {
+      try {
+        const raw = await fetchAllUsersREST();
+        if (cancelled) return;
+        raw.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+        const list = raw.slice(0, 100).map((d, i) => ({
+          uid:         d.uid,
+          displayName: d.displayName || 'Player',
+          photo:       d.photoURL || '',
+          favCode:     WC.teams[d.favTeam] ? WC.teams[d.favTeam].code : 'ar',
+          points:      d.totalPoints || 0,
+          exact:       d.exactScores || 0,
+          played:      (d.exactScores || 0) + (d.correctResults || 0),
+          rank:        i + 1,
+          isMe:        d.uid === (WC.me && WC.me.uid),
+        }));
+        setUsers(list);
+        setLbLoading(false);
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Leaderboard read error:', err && err.message);
+        setLbLoading(false);
+      }
+    }
+    load();
+    const timer = setInterval(load, 20000);
+    return () => { cancelled = true; clearInterval(timer); };
   }, []);
 
   const top3 = users.slice(0, 3);
@@ -257,15 +271,18 @@ function Profile({ predictions, onOpen, matches }) {
 
   useE2(() => {
     if (!WC.me || !WC.me.uid) return;
-    // Plain read + count in JS (the orderByChild query under-returned on the live
-    // connection). Rank = how many users have more points than me, + 1.
-    window.fbDb.ref('users').once('value').then(snap => {
-      const meSnap = snap.child(WC.me.uid);
-      const myPts = meSnap.exists() ? (meSnap.val().totalPoints || 0) : 0;
+    // Read via REST (the SDK under-returned on this connection). Rank = how many
+    // users have more points than me, + 1.
+    let cancelled = false;
+    fetchAllUsersREST().then(raw => {
+      if (cancelled) return;
+      const me = raw.find(u => u.uid === WC.me.uid);
+      const myPts = me ? (me.totalPoints || 0) : 0;
       let better = 0;
-      snap.forEach(c => { if ((c.val().totalPoints || 0) > myPts) better++; });
+      raw.forEach(u => { if ((u.totalPoints || 0) > myPts) better++; });
       setUserRank(better + 1);
     }).catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   const stats = useM2(() => {
