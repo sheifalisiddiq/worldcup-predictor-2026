@@ -235,7 +235,28 @@
 
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').then(function (reg) {
+          reg.update();
+          // A new SW means a new build. Activate it immediately so installed
+          // PWAs can't stay frozen on a stale cached bundle.
+          reg.addEventListener('updatefound', function () {
+            var nw = reg.installing;
+            if (nw) nw.addEventListener('statechange', function () {
+              if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                if (nw.postMessage) nw.postMessage('skipWaiting');
+              }
+            });
+          });
+        }).catch(function () {});
+        // When the new SW takes control, reload once to pick up the fresh build.
+        var reloaded = false;
+        navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (reloaded) return;
+          reloaded = true;
+          location.reload();
+        });
+      });
     }
   </script>
 
@@ -346,6 +367,30 @@
         showError('Something failed while loading. Tap Reload. If it keeps happening, check your internet connection.');
       }
     });
+    // Auto self-heal: if still on the boot screen after 8s, a stale/stuck
+    // service worker is the usual cause (common on installed PWAs). Unregister
+    // all SWs, wipe caches, and reload once (guarded so it can't loop).
+    setTimeout(function () {
+      if (!document.getElementById('boot')) return;
+      if (sessionStorage.getItem('wc26_selfheal')) return;
+      sessionStorage.setItem('wc26_selfheal', '1');
+      var done = function () { location.reload(); };
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations()
+          .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+          .catch(function () {})
+          .then(function () {
+            if (window.caches && caches.keys) {
+              return caches.keys().then(function (ks) {
+                return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+              });
+            }
+          })
+          .catch(function () {})
+          .then(done);
+      } else { done(); }
+    }, 8000);
+    // Last resort: still stuck after self-heal -> show a manual Reload.
     setTimeout(function () {
       if (document.getElementById('boot')) {
         showError('This is taking longer than usual — likely a slow connection. Tap Reload to try again.');

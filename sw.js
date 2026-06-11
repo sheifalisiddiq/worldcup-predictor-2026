@@ -1,9 +1,14 @@
-const CACHE = 'wc26-v11';
+const CACHE = 'wc26-v12';
 const PRECACHE = ['/', '/data.js', '/firebase-config.js', '/dist/rings.js', '/dist/components.js', '/dist/screens.js', '/dist/screens2.js', '/dist/app.js', '/icon.svg'];
 
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE).catch(() => {})));
+});
+
+// Page asks a waiting SW to take over immediately (used by the update flow).
+self.addEventListener('message', e => {
+  if (e.data === 'skipWaiting') self.skipWaiting();
 });
 
 self.addEventListener('activate', e => {
