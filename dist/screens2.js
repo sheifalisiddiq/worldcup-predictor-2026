@@ -21,11 +21,16 @@ function Leaderboard() {
     return () => clearTimeout(t);
   }, []);
   useE2(() => {
-    const ref = window.fbDb.ref('users').orderByChild('totalPoints').limitToLast(50);
+    // Read the whole users node and rank client-side. The server-side
+    // orderByChild('totalPoints').limitToLast() query returned only a single row
+    // on the live connection (a plain read returns every user), so sort in JS —
+    // plenty for this leaderboard's size.
+    const ref = window.fbDb.ref('users');
     const cb = snap => {
       const raw = [];
-      snap.forEach(child => raw.unshift(child.val()));
-      const list = raw.map((d, i) => ({
+      snap.forEach(child => raw.push(child.val()));
+      raw.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+      const list = raw.slice(0, 100).map((d, i) => ({
         uid: d.uid,
         displayName: d.displayName || 'Player',
         photo: d.photoURL || '',
@@ -428,13 +433,16 @@ function Profile({
   }, []);
   useE2(() => {
     if (!WC.me || !WC.me.uid) return;
-    window.fbDb.ref('users/' + WC.me.uid).once('value').then(snap => {
-      if (!snap.exists()) return null;
-      const myPts = snap.val().totalPoints || 0;
-      return window.fbDb.ref('users').orderByChild('totalPoints').startAt(myPts + 1).once('value');
-    }).then(s => {
-      if (!s) return;
-      setUserRank(s.numChildren() + 1);
+    // Plain read + count in JS (the orderByChild query under-returned on the live
+    // connection). Rank = how many users have more points than me, + 1.
+    window.fbDb.ref('users').once('value').then(snap => {
+      const meSnap = snap.child(WC.me.uid);
+      const myPts = meSnap.exists() ? meSnap.val().totalPoints || 0 : 0;
+      let better = 0;
+      snap.forEach(c => {
+        if ((c.val().totalPoints || 0) > myPts) better++;
+      });
+      setUserRank(better + 1);
     }).catch(() => {});
   }, []);
   const stats = useM2(() => {
