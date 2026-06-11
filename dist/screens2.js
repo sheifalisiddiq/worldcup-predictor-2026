@@ -39,7 +39,13 @@ function Leaderboard() {
       setUsers(list);
       setLbLoading(false);
     };
-    ref.on('value', cb, () => setLbLoading(false));
+    const errCb = err => {
+      // Surface the real reason the board is empty instead of failing silently.
+      console.error('Leaderboard read error:', err && err.code, err && err.message);
+      window.toast('Leaderboard error: ' + (err && err.message || 'unknown'), 'error', 7000);
+      setLbLoading(false);
+    };
+    ref.on('value', cb, errCb);
     return () => ref.off('value', cb);
   }, []);
   const top3 = users.slice(0, 3);
