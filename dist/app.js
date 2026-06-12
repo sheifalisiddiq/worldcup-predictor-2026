@@ -103,19 +103,46 @@ function App() {
         window.toast('Sign-in failed: ' + err.message, 'error', 4000);
       }
     });
-    const unsub = window.fbAuth.onAuthStateChanged(async user => {
-      if (user) {
+    const unsub = window.fbAuth.onAuthStateChanged(user => {
+      if (!user) {
+        WC.me = {};
+        setSigned(false);
+        setCurrentUser(null);
+        setPredictions({});
+        setPredsReady(false);
+        setMatchesReady(false);
+        setAuthLoading(false);
+        return;
+      }
+      // Enter the app IMMEDIATELY from the Google auth user — identity (uid,
+      // name, email, photo) needs no database round-trip. The previous code
+      // awaited an RTDB read before clearing authLoading, so a slow/blocked
+      // realtime-DB connection trapped the user on the LOADING screen forever.
+      WC.me = {
+        uid: user.uid,
+        displayName: user.displayName || 'Player',
+        email: user.email || '',
+        photo: user.photoURL || '',
+        favTeam: 'Argentina'
+      };
+      setCurrentUser(WC.me);
+      setSigned(true);
+      setAuthLoading(false);
+
+      // Profile (favTeam) + predictions load in the BACKGROUND. A failure or
+      // slow read here just means an empty board until it arrives — never a
+      // stuck loading screen.
+      (async () => {
         try {
           const userRef = window.fbDb.ref('users/' + user.uid);
           const snap = await userRef.once('value');
-          let favTeam = 'Argentina';
           if (!snap.exists()) {
             await userRef.set({
               uid: user.uid,
               displayName: user.displayName || 'Player',
               email: user.email || '',
               photoURL: user.photoURL || '',
-              favTeam: favTeam,
+              favTeam: 'Argentina',
               totalPoints: 0,
               exactScores: 0,
               correctResults: 0,
@@ -123,39 +150,31 @@ function App() {
               createdAt: firebase.database.ServerValue.TIMESTAMP
             });
           } else {
-            favTeam = snap.val().favTeam || 'Argentina';
+            WC.me.favTeam = snap.val().favTeam || 'Argentina';
+            setCurrentUser({
+              ...WC.me
+            });
           }
-          WC.me = {
-            uid: user.uid,
-            displayName: user.displayName || 'Player',
-            email: user.email || '',
-            photo: user.photoURL || '',
-            favTeam: favTeam
-          };
-          setCurrentUser(WC.me);
           await loadPredictions(user.uid);
-          setPredsReady(true);
-          setSigned(true);
         } catch (err) {
-          // Google auth succeeded but reading/writing the user's profile in the
-          // Realtime DB failed (e.g. security rules not deployed, network). Surface
-          // it instead of silently bouncing the user back to a dead Landing page.
-          console.error('Auth setup error:', err);
-          window.toast('Signed in, but couldn’t load your profile. Check connection and retry.', 'error', 6000);
-          setSigned(false);
+          console.error('Profile/predictions load error:', err);
+        } finally {
+          setPredsReady(true);
         }
-      } else {
-        WC.me = {};
-        setSigned(false);
-        setCurrentUser(null);
-        setPredictions({});
-        setPredsReady(false);
-        setMatchesReady(false);
-      }
-      setAuthLoading(false);
+      })();
     });
     return () => unsub();
   }, []);
+
+  // Watchdog: if Firebase never reports an auth state at all (SDK init hang,
+  // blocked IndexedDB in private mode, dead network), don't trap the user on
+  // the LOADING screen. After 8s, fall through to Landing; if the listener
+  // resolves later it still signs them in.
+  useEffect(() => {
+    if (!authLoading) return;
+    const t = setTimeout(() => setAuthLoading(false), 8000);
+    return () => clearTimeout(t);
+  }, [authLoading]);
   useEffect(() => {
     if (!signed) return;
     let cancelled = false;
