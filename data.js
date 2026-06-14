@@ -48,12 +48,21 @@
   }
 
   function calcGroupStandings(groupLetter) {
-    var groupTeams = (groupsRaw[groupLetter] || []).map(function(item) { return item[0]; });
+    // Build the table from the LIVE fixtures, not the hardcoded groupsRaw roster.
+    // The real draw + API team names (e.g. "United States", not "USA") don't
+    // match the placeholder roster, so keying off groupsRaw left every team on
+    // zero. Deriving teams from the group's own matches is correct for any draw.
     var allMatches = (window.WC && window.WC.matches) ? window.WC.matches : [];
-    var groupMatches = allMatches.filter(function(m) { return m.group === groupLetter && m.status === 'finished'; });
+    var groupMatches = allMatches.filter(function(m) { return m.group === groupLetter; });
     var table = {};
-    groupTeams.forEach(function(t) { table[t] = { team: t, p:0, w:0, d:0, l:0, gf:0, ga:0, gd:0, pts:0 }; });
+    function ensure(name) {
+      if (name && !table[name]) table[name] = { team: name, p:0, w:0, d:0, l:0, gf:0, ga:0, gd:0, pts:0 };
+    }
+    // Seed every team that appears in the group (so upcoming teams show with 0s).
+    groupMatches.forEach(function(m) { ensure(m.teamA); ensure(m.teamB); });
+    // Accumulate only finished matches with real scores.
     groupMatches.forEach(function(m) {
+      if (m.status !== 'finished' || m.scoreA == null || m.scoreB == null) return;
       var a = table[m.teamA], b = table[m.teamB];
       if (!a || !b) return;
       a.p++; b.p++;
