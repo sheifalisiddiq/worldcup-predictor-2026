@@ -237,18 +237,31 @@ function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [signed, openMatch]);
   async function loadPredictions(uid) {
+    // Read via RTDB REST, not the JS SDK query. The SDK realtime path
+    // under-returns multi-row reads (returns a partial/empty set with no
+    // error) — same bug that broke the leaderboard. A REST query honors the
+    // .indexOn:["uid"] rule and reliably returns the user's full pick set.
     try {
-      const snap = await window.fbDb.ref('predictions').orderByChild('uid').equalTo(uid).once('value');
+      const user = window.fbAuth && window.fbAuth.currentUser;
+      if (!user) return {};
+      const tok = await user.getIdToken();
+      const base = window.fbDb.ref().toString().replace(/\/+$/, '');
+      const url = base + '/predictions.json?orderBy=' + encodeURIComponent('"uid"') + '&equalTo=' + encodeURIComponent('"' + uid + '"') + '&auth=' + encodeURIComponent(tok);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
       const preds = {};
-      snap.forEach(child => {
-        const d = child.val();
-        preds[d.matchId] = {
-          a: d.homeGoals,
-          b: d.awayGoals,
-          points: d.points,
-          scored: d.scored
-        };
-      });
+      if (data) {
+        Object.values(data).forEach(d => {
+          if (!d || d.matchId == null) return;
+          preds[d.matchId] = {
+            a: d.homeGoals,
+            b: d.awayGoals,
+            points: d.points,
+            scored: d.scored
+          };
+        });
+      }
       setPredictions(preds);
       return preds;
     } catch (err) {
