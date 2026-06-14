@@ -130,37 +130,49 @@ function App() {
       setSigned(true);
       setAuthLoading(false);
 
-      // Profile (favTeam) + predictions load in the BACKGROUND. A failure or
-      // slow read here just means an empty board until it arrives — never a
-      // stuck loading screen.
+      // Predictions load in the BACKGROUND over REST. This runs INDEPENDENTLY of
+      // the profile read below: previously it was sequenced after an SDK
+      // once('value') that, when the realtime socket wedged, never resolved — so
+      // the board stayed empty and every match showed "no pick". loadPredictions
+      // swallows its own errors, so .finally always clears predsReady.
+      loadPredictions(user.uid).finally(() => setPredsReady(true));
+
+      // Profile (favTeam) — separate REST read so its failure can never block
+      // predictions. Creates the user row on first sign-in.
       (async () => {
         try {
-          const userRef = window.fbDb.ref('users/' + user.uid);
-          const snap = await userRef.once('value');
-          if (!snap.exists()) {
-            await userRef.set({
-              uid: user.uid,
-              displayName: user.displayName || 'Player',
-              email: user.email || '',
-              photoURL: user.photoURL || '',
-              favTeam: 'Argentina',
-              totalPoints: 0,
-              exactScores: 0,
-              correctResults: 0,
-              predictionsCount: 0,
-              createdAt: firebase.database.ServerValue.TIMESTAMP
+          const url = await dbUrl('/users/' + user.uid + '.json');
+          const res = await fetch(url);
+          const data = res.ok ? await res.json() : null;
+          if (!data) {
+            await fetch(url, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                uid: user.uid,
+                displayName: user.displayName || 'Player',
+                email: user.email || '',
+                photoURL: user.photoURL || '',
+                favTeam: 'Argentina',
+                totalPoints: 0,
+                exactScores: 0,
+                correctResults: 0,
+                predictionsCount: 0,
+                createdAt: {
+                  '.sv': 'timestamp'
+                }
+              })
             });
           } else {
-            WC.me.favTeam = snap.val().favTeam || 'Argentina';
+            WC.me.favTeam = data.favTeam || 'Argentina';
             setCurrentUser({
               ...WC.me
             });
           }
-          await loadPredictions(user.uid);
         } catch (err) {
-          console.error('Profile/predictions load error:', err);
-        } finally {
-          setPredsReady(true);
+          console.error('Profile load error:', err);
         }
       })();
     });
@@ -255,17 +267,20 @@ function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [signed, openMatch]);
+
+  // Build an authenticated RTDB REST URL. The SDK realtime socket is unreliable
+  // on this project — it under-returns multi-row reads AND can hang single-row
+  // reads/writes with no error when the websocket wedges. So every per-user read
+  // and write goes over REST (HTTP), which is consistently correct here.
+  async function dbUrl(path) {
+    const tok = await window.fbAuth.currentUser.getIdToken();
+    const base = window.fbDb.ref().toString().replace(/\/+$/, '');
+    return base + path + (path.indexOf('?') >= 0 ? '&' : '?') + 'auth=' + encodeURIComponent(tok);
+  }
   async function loadPredictions(uid) {
-    // Read via RTDB REST, not the JS SDK query. The SDK realtime path
-    // under-returns multi-row reads (returns a partial/empty set with no
-    // error) — same bug that broke the leaderboard. A REST query honors the
-    // .indexOn:["uid"] rule and reliably returns the user's full pick set.
     try {
-      const user = window.fbAuth && window.fbAuth.currentUser;
-      if (!user) return {};
-      const tok = await user.getIdToken();
-      const base = window.fbDb.ref().toString().replace(/\/+$/, '');
-      const url = base + '/predictions.json?orderBy=' + encodeURIComponent('"uid"') + '&equalTo=' + encodeURIComponent('"' + uid + '"') + '&auth=' + encodeURIComponent(tok);
+      if (!(window.fbAuth && window.fbAuth.currentUser)) return {};
+      const url = await dbUrl('/predictions.json?orderBy=' + encodeURIComponent('"uid"') + '&equalTo=' + encodeURIComponent('"' + uid + '"'));
       const res = await fetch(url);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
@@ -338,15 +353,27 @@ function App() {
       }
     }));
     try {
-      await window.fbDb.ref('predictions/' + docId).set({
-        uid: currentUser.uid,
-        matchId: matchId,
-        homeGoals: val.a,
-        awayGoals: val.b,
-        submittedAt: firebase.database.ServerValue.TIMESTAMP,
-        points: null,
-        scored: false
+      // Write over REST, not the SDK. The SDK .set() rides the realtime socket,
+      // which can wedge with no error — picks silently failed to lock.
+      const url = await dbUrl('/predictions/' + docId + '.json');
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          uid: currentUser.uid,
+          matchId: matchId,
+          homeGoals: val.a,
+          awayGoals: val.b,
+          submittedAt: {
+            '.sv': 'timestamp'
+          },
+          points: null,
+          scored: false
+        })
       });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
       if (isNew) {
         window.fbDb.ref('users/' + currentUser.uid).transaction(data => {
           if (!data) return data;
