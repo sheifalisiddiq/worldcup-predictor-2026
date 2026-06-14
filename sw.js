@@ -1,5 +1,8 @@
-const CACHE = 'wc26-v14';
-const PRECACHE = ['/', '/data.js', '/firebase-config.js', '/dist/rings.js', '/dist/components.js', '/dist/screens.js', '/dist/screens2.js', '/dist/app.js', '/icon.svg'];
+const CACHE = 'wc26-v15';
+const PRECACHE = ['/', '/data.js', '/firebase-config.js',
+  '/dist/vendor/react.production.min.js', '/dist/vendor/react-dom.production.min.js',
+  '/dist/vendor/firebase-app-compat.js', '/dist/vendor/firebase-auth-compat.js', '/dist/vendor/firebase-database-compat.js',
+  '/dist/rings.js', '/dist/components.js', '/dist/screens.js', '/dist/screens2.js', '/dist/app.js', '/icon.svg'];
 
 self.addEventListener('install', e => {
   self.skipWaiting();

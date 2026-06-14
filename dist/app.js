@@ -65,7 +65,8 @@ const TABS = [{
 const TAB_ORDER = TABS.map(t => t.id);
 const LS = {
   preds: 'wc26_preds_v2',
-  theme: 'wc26_theme'
+  theme: 'wc26_theme',
+  matches: 'wc26_matches_v1'
 };
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.innerWidth < 768);
@@ -180,6 +181,20 @@ function App() {
     let cancelled = false;
     setMatchesLoading(true);
 
+    // Render instantly from the last good fixtures while the network fetch runs.
+    // If /api/matches is slow/down, the board shows cached fixtures instead of
+    // an empty screen.
+    if (!WC.matches || !WC.matches.length) {
+      try {
+        const cached = JSON.parse(localStorage.getItem(LS.matches) || 'null');
+        if (cached && cached.length) {
+          WC.matches = cached;
+          setMatchList(cached);
+          setMatchesReady(true);
+        }
+      } catch (e) {}
+    }
+
     // Fetch fixtures with retry. A single transient upstream blip (cold start,
     // football-data.org slow → Vercel 504 HTML) shouldn't wipe the fixtures or
     // scare the user. Retry a few times with backoff before giving up, and only
@@ -197,6 +212,9 @@ function App() {
           setMatchList(data.matches);
           setMatchesReady(true);
           setMatchesLoading(false);
+          try {
+            localStorage.setItem(LS.matches, JSON.stringify(data.matches));
+          } catch (e) {}
           return;
         }
         throw new Error(data.error || 'No matches in response');
@@ -210,7 +228,8 @@ function App() {
           return;
         }
         setMatchesLoading(false);
-        // Keep any fixtures we already had; only alarm if we have nothing.
+        // Keep any fixtures we already had (live or cached); only alarm if we
+        // genuinely have nothing to show.
         if (!WC.matches || !WC.matches.length) {
           window.toast('Could not load fixtures — tap to retry.', 'error', 5000);
         }
