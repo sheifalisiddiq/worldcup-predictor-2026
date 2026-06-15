@@ -68,6 +68,25 @@ const LS = {
   theme: 'wc26_theme',
   matches: 'wc26_matches_v1'
 };
+
+// Picks are cached per-user in localStorage so a failed/slow REST write or read
+// can never make a prediction silently vanish on reload. Keyed by uid so a
+// shared browser never leaks one account's picks into another.
+function lsPredsKey(uid) {
+  return LS.preds + '_' + uid;
+}
+function readLocalPreds(uid) {
+  try {
+    return JSON.parse(localStorage.getItem(lsPredsKey(uid)) || '{}') || {};
+  } catch (e) {
+    return {};
+  }
+}
+function writeLocalPreds(uid, preds) {
+  try {
+    localStorage.setItem(lsPredsKey(uid), JSON.stringify(preds));
+  } catch (e) {}
+}
 function useIsMobile() {
   const [mobile, setMobile] = useState(() => window.innerWidth < 768);
   useEffect(() => {
@@ -253,10 +272,6 @@ function App() {
     };
   }, [signed]);
   useEffect(() => {
-    if (!matchesReady || !predsReady || !currentUser) return;
-    scoreFinishedMatches(WC.matches, predictions, currentUser.uid);
-  }, [matchesReady, predsReady]);
-  useEffect(() => {
     function onKey(e) {
       if (!signed || openMatch) return;
       if (e.key === '1') handleTabChange('matches');
@@ -278,17 +293,21 @@ function App() {
     return base + path + (path.indexOf('?') >= 0 ? '&' : '?') + 'auth=' + encodeURIComponent(tok);
   }
   async function loadPredictions(uid) {
+    // Show any picks cached on this device instantly — this covers an offline
+    // reload and a slow/failed REST read, so a pick is never blank-screened.
+    const local = readLocalPreds(uid);
+    if (Object.keys(local).length) setPredictions(local);
     try {
-      if (!(window.fbAuth && window.fbAuth.currentUser)) return {};
+      if (!(window.fbAuth && window.fbAuth.currentUser)) return local;
       const url = await dbUrl('/predictions.json?orderBy=' + encodeURIComponent('"uid"') + '&equalTo=' + encodeURIComponent('"' + uid + '"'));
       const res = await fetch(url);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
-      const preds = {};
+      const server = {};
       if (data) {
         Object.values(data).forEach(d => {
           if (!d || d.matchId == null) return;
-          preds[d.matchId] = {
+          server[d.matchId] = {
             a: d.homeGoals,
             b: d.awayGoals,
             points: d.points,
@@ -296,94 +315,120 @@ function App() {
           };
         });
       }
-      setPredictions(preds);
-      return preds;
+      // Server is authoritative for every match it knows. An UNSYNCED local pick
+      // (a write the server never confirmed) wins and gets re-flushed below, so
+      // a dropped write is recovered instead of lost.
+      const merged = {
+        ...server
+      };
+      Object.keys(local).forEach(mid => {
+        const lp = local[mid];
+        if (lp && lp.unsynced) merged[mid] = lp;else if (!(mid in server)) merged[mid] = lp;
+      });
+      setPredictions(merged);
+      writeLocalPreds(uid, merged);
+      // Retry any pick the server is still missing/unconfirmed.
+      Object.keys(merged).forEach(mid => {
+        if (merged[mid] && merged[mid].unsynced) flushPick(uid, mid, merged[mid]);
+      });
+      return merged;
     } catch (err) {
       console.error('Load predictions error:', err);
-      return {};
+      return local;
     }
   }
-  async function scoreFinishedMatches(matches, currentPredictions, uid) {
-    try {
-      const updates = {};
-      let pointsDelta = 0,
-        exactDelta = 0,
-        resultDelta = 0;
-      let hasUpdates = false;
-      for (const m of matches) {
-        if (m.status !== 'finished' || m.scoreA === null || m.scoreA === undefined) continue;
-        const pred = currentPredictions[m.id];
-        if (!pred || pred.scored) continue;
-        const pts = WC.pointsFor(pred, m);
-        const docId = uid + '_' + m.id;
-        updates['predictions/' + docId + '/points'] = pts;
-        updates['predictions/' + docId + '/scored'] = true;
-        pointsDelta += pts;
-        const exactThreshold = m.stage === 'Group Stage' ? WC.scoring.exactGroup : WC.scoring.exactKnockout;
-        if (pts >= exactThreshold) exactDelta++;else if (pts > 0) resultDelta++;
-        hasUpdates = true;
-      }
-      if (hasUpdates) {
-        await window.fbDb.ref().update(updates);
-        const userRef = window.fbDb.ref('users/' + uid);
-        await userRef.transaction(data => {
-          if (!data) return data;
-          data.totalPoints = (data.totalPoints || 0) + pointsDelta;
-          data.exactScores = (data.exactScores || 0) + exactDelta;
-          data.correctResults = (data.correctResults || 0) + resultDelta;
-          return data;
+
+  // PUT a single pick over REST with one retry. Returns true on success. Used by
+  // both setPrediction and the re-flush path so the write logic lives in one place.
+  async function writeRemote(uid, matchId, val) {
+    const docId = uid + '_' + matchId;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const url = await dbUrl('/predictions/' + docId + '.json');
+        const res = await fetch(url, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            uid: uid,
+            matchId: matchId,
+            homeGoals: val.a,
+            awayGoals: val.b,
+            submittedAt: {
+              '.sv': 'timestamp'
+            },
+            points: null,
+            scored: false
+          })
         });
-        await loadPredictions(uid);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return true;
+      } catch (err) {
+        console.error('Save prediction error (attempt ' + (attempt + 1) + '):', err);
+        if (attempt === 0) await new Promise(r => setTimeout(r, 800));
       }
-    } catch (err) {
-      console.error('Scoring error:', err);
     }
+    return false;
+  }
+
+  // Mark a pick synced once the server confirms it (clears the unsynced flag in
+  // both state and the device cache).
+  function markSynced(uid, matchId) {
+    setPredictions(p => {
+      if (!p[matchId]) return p;
+      const next = {
+        ...p,
+        [matchId]: {
+          ...p[matchId],
+          unsynced: false
+        }
+      };
+      writeLocalPreds(uid, next);
+      return next;
+    });
+  }
+  function flushPick(uid, matchId, val) {
+    writeRemote(uid, matchId, val).then(ok => {
+      if (ok) markSynced(uid, matchId);
+    });
   }
   async function setPrediction(matchId, val) {
     if (!currentUser) return;
-    const docId = currentUser.uid + '_' + matchId;
+    const uid = currentUser.uid;
     const isNew = !predictions[matchId];
-    setPredictions(p => ({
-      ...p,
-      [matchId]: {
-        a: val.a,
-        b: val.b,
-        points: null,
-        scored: false
-      }
-    }));
-    try {
-      // Write over REST, not the SDK. The SDK .set() rides the realtime socket,
-      // which can wedge with no error — picks silently failed to lock.
-      const url = await dbUrl('/predictions/' + docId + '.json');
-      const res = await fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          uid: currentUser.uid,
-          matchId: matchId,
-          homeGoals: val.a,
-          awayGoals: val.b,
-          submittedAt: {
-            '.sv': 'timestamp'
-          },
+    // Optimistic update + device cache, marked unsynced until the server
+    // confirms. Writing to localStorage here is what stops a failed REST write
+    // from losing the pick on the next reload.
+    setPredictions(p => {
+      const next = {
+        ...p,
+        [matchId]: {
+          a: val.a,
+          b: val.b,
           points: null,
-          scored: false
-        })
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+          scored: false,
+          unsynced: true
+        }
+      };
+      writeLocalPreds(uid, next);
+      return next;
+    });
+    // Write over REST, not the SDK. The SDK .set() rides the realtime socket,
+    // which can wedge with no error — picks silently failed to lock.
+    const ok = await writeRemote(uid, matchId, val);
+    if (ok) {
+      markSynced(uid, matchId);
       if (isNew) {
-        window.fbDb.ref('users/' + currentUser.uid).transaction(data => {
+        window.fbDb.ref('users/' + uid).transaction(data => {
           if (!data) return data;
           data.predictionsCount = (data.predictionsCount || 0) + 1;
           return data;
         });
       }
-    } catch (err) {
-      console.error('Save prediction error:', err);
-      window.toast('Could not save prediction. Try again.', 'error', 3000);
+    } else {
+      // Kept on this device and retried on next load — not lost, just not synced.
+      window.toast('Pick saved on this device but not synced yet — reopen the app when back online.', 'error', 6000);
     }
   }
   function signIn() {
@@ -494,7 +539,9 @@ function App() {
       loading: matchesLoading,
       matches: matchList
     });
-    if (tab === 'leaderboard') return /*#__PURE__*/React.createElement(Leaderboard, null);
+    if (tab === 'leaderboard') return /*#__PURE__*/React.createElement(Leaderboard, {
+      matches: matchList
+    });
     if (tab === 'profile') return /*#__PURE__*/React.createElement(Profile, {
       predictions: predictions,
       onOpen: id => setOpenMatch(id),

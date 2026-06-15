@@ -20,8 +20,31 @@ async function fetchAllUsersREST() {
   return data ? Object.values(data) : [];
 }
 
+/* Read EVERY prediction row over REST and group it by uid, so the leaderboard
+   (and profile rank) can recompute each player's points from their raw picks
+   instead of trusting a fragile stored counter. /predictions is already
+   readable by any signed-in user (database.rules.json), so this exposes nothing
+   new. Returns { uid: { matchId: { a, b } } }. */
+async function fetchPredictionsByUidREST() {
+  const user = window.fbAuth && window.fbAuth.currentUser;
+  if (!user) return {};
+  const tok = await user.getIdToken();
+  const base = window.fbDb.ref().toString().replace(/\/+$/, '');
+  const res = await fetch(base + '/predictions.json?auth=' + encodeURIComponent(tok));
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  const byUid = {};
+  if (data) {
+    Object.values(data).forEach(p => {
+      if (!p || p.uid == null || p.matchId == null) return;
+      (byUid[p.uid] = byUid[p.uid] || {})[p.matchId] = { a: p.homeGoals, b: p.awayGoals };
+    });
+  }
+  return byUid;
+}
+
 /* =================== LEADERBOARD =================== */
-function Leaderboard() {
+function Leaderboard({ matches }) {
   const [scope, setScope] = useS2('Global');
   const [mounted, setMounted] = useS2(false);
   const [users, setUsers] = useS2([]);
@@ -29,26 +52,42 @@ function Leaderboard() {
   useE2(() => { const t = setTimeout(() => setMounted(true), 100); return () => clearTimeout(t); }, []);
 
   useE2(() => {
-    // Read via REST (the realtime SDK listener under-returns on this connection)
-    // and rank client-side. Poll so the board stays roughly live.
+    // Recompute every player's points from their RAW picks (the same
+    // WC.computeUserTotals the Profile uses) instead of trusting a stored
+    // counter. This keeps profile==leaderboard, and updates a user's standing
+    // even when they never reopen the app. Poll so the board stays roughly live.
     let cancelled = false;
     async function load() {
       try {
-        const raw = await fetchAllUsersREST();
+        // Fixtures: prefer the passed prop / global cache; fetch as a last
+        // resort since the board can render before the Matches tab loads them.
+        let ms = (matches && matches.length) ? matches : WC.matches;
+        if (!ms || !ms.length) {
+          try {
+            const r = await fetch('/api/matches', { cache: 'no-store' });
+            const d = r.ok ? await r.json() : null;
+            if (d && d.matches && d.matches.length) { ms = d.matches; WC.matches = d.matches; }
+          } catch (e) {}
+        }
+        ms = ms || [];
+        const [raw, byUid] = await Promise.all([fetchAllUsersREST(), fetchPredictionsByUidREST()]);
         if (cancelled) return;
-        raw.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
-        const list = raw.slice(0, 100).map((d, i) => ({
-          uid:         d.uid,
-          displayName: d.displayName || 'Player',
-          photo:       d.photoURL || '',
-          favCode:     WC.teams[d.favTeam] ? WC.teams[d.favTeam].code : 'ar',
-          points:      d.totalPoints || 0,
-          exact:       d.exactScores || 0,
-          played:      (d.exactScores || 0) + (d.correctResults || 0),
-          rank:        i + 1,
-          isMe:        d.uid === (WC.me && WC.me.uid),
-        }));
-        setUsers(list);
+        const list = raw.map(d => {
+          const t = WC.computeUserTotals(byUid[d.uid] || {}, ms);
+          return {
+            uid:         d.uid,
+            displayName: d.displayName || 'Player',
+            photo:       d.photoURL || '',
+            favCode:     WC.teams[d.favTeam] ? WC.teams[d.favTeam].code : 'ar',
+            points:      t.total,
+            exact:       t.exact,
+            played:      t.played,
+            isMe:        d.uid === (WC.me && WC.me.uid),
+          };
+        });
+        list.sort((a, b) => b.points - a.points || b.exact - a.exact);
+        list.forEach((u, i) => { u.rank = i + 1; });
+        setUsers(list.slice(0, 100));
         setLbLoading(false);
       } catch (err) {
         if (cancelled) return;
@@ -59,7 +98,7 @@ function Leaderboard() {
     load();
     const timer = setInterval(load, 20000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, []);
+  }, [matches]);
 
   const top3 = users.slice(0, 3);
   const rest = users.slice(3);
@@ -271,34 +310,29 @@ function Profile({ predictions, onOpen, matches }) {
 
   useE2(() => {
     if (!WC.me || !WC.me.uid) return;
-    // Read via REST (the SDK under-returned on this connection). Rank = how many
-    // users have more points than me, + 1.
+    // Rank = how many users have more points than me, + 1. Recompute every
+    // user's points from their raw picks (same source as the Leaderboard) so
+    // the rank shown here never disagrees with the board.
     let cancelled = false;
-    fetchAllUsersREST().then(raw => {
+    Promise.all([fetchAllUsersREST(), fetchPredictionsByUidREST()]).then(([raw, byUid]) => {
       if (cancelled) return;
-      const me = raw.find(u => u.uid === WC.me.uid);
-      const myPts = me ? (me.totalPoints || 0) : 0;
+      const ms = matchData;
+      const myPts = WC.computeUserTotals(byUid[WC.me.uid] || {}, ms).total;
       let better = 0;
-      raw.forEach(u => { if ((u.totalPoints || 0) > myPts) better++; });
+      raw.forEach(u => {
+        if (WC.computeUserTotals(byUid[u.uid] || {}, ms).total > myPts) better++;
+      });
       setUserRank(better + 1);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [matchData]);
 
   const stats = useM2(() => {
-    let total = 0, exact = 0, result = 0, played = 0, picks = 0;
-    Object.entries(predictions).forEach(([id, p]) => {
-      if (p.a != null) picks++;
-      const m = matchData.find((x) => x.id === id);
-      if (m && m.status === 'finished') {
-        played++;
-        const pts = WC.pointsFor(p, m);
-        total += pts;
-        if (pts >= 3) exact++; else if (pts >= 1) result++;
-      }
-    });
-    const acc = played ? Math.round(((exact + result) / played) * 100) : 0;
-    return { total, exact, result, played, picks, acc };
+    // Derive every number from the shared scorer so the Profile total always
+    // matches the Leaderboard (both call WC.computeUserTotals on raw picks).
+    const t = WC.computeUserTotals(predictions, matchData);
+    const acc = t.played ? Math.round(((t.exact + t.result) / t.played) * 100) : 0;
+    return { ...t, acc };
   }, [predictions, matchData]);
 
   const history = useM2(() => {

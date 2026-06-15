@@ -47,6 +47,30 @@
     return 0;
   }
 
+  // Single source of truth for a user's points. Both the Profile screen and the
+  // Leaderboard derive scores from this — never from a stored counter — so the
+  // two surfaces can never disagree, and totals self-heal from the raw picks.
+  // preds: { matchId: { a, b } }  ·  matches: array of fixtures (WC.matches)
+  function computeUserTotals(preds, matches) {
+    var byId = {};
+    (matches || []).forEach(function(m) { byId[m.id] = m; });
+    var total = 0, exact = 0, result = 0, played = 0, picks = 0;
+    Object.keys(preds || {}).forEach(function(id) {
+      var p = preds[id];
+      if (p && p.a != null && p.b != null) picks++;
+      var m = byId[id];
+      if (m && m.status === 'finished' && m.scoreA != null) {
+        played++;
+        var pts = pointsFor(p, m);
+        total += pts;
+        var exactThreshold = isKnockout(m.stage) ? scoring.exactKnockout : scoring.exactGroup;
+        if (pts >= exactThreshold) exact++;
+        else if (pts > 0) result++;
+      }
+    });
+    return { total: total, exact: exact, result: result, played: played, picks: picks };
+  }
+
   function calcGroupStandings(groupLetter) {
     // Build the table from the LIVE fixtures, not the hardcoded groupsRaw roster.
     // The real draw + API team names (e.g. "United States", not "USA") don't
@@ -87,6 +111,7 @@
     scoring: scoring,
     isKnockout: isKnockout,
     pointsFor: pointsFor,
+    computeUserTotals: computeUserTotals,
     calcGroupStandings: calcGroupStandings,
     stages: ['Group Stage','Round of 32','Round of 16','Quarter-finals','Semi-finals','Third-place','Final'],
   };
