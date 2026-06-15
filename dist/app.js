@@ -391,8 +391,12 @@ function App() {
       if (ok) markSynced(uid, matchId);
     });
   }
+
+  // Returns true only when the pick is confirmed written to the server. The
+  // caller (MatchDetail.save) uses this to decide whether to show "locked in" —
+  // so the UI never claims success on a write that did not actually persist.
   async function setPrediction(matchId, val) {
-    if (!currentUser) return;
+    if (!currentUser) return false;
     const uid = currentUser.uid;
     // Optimistic update + device cache, marked unsynced until the server
     // confirms. Writing to localStorage here is what stops a failed REST write
@@ -414,12 +418,11 @@ function App() {
     // Write over REST, not the SDK. The SDK .set() rides the realtime socket,
     // which can wedge with no error — picks silently failed to lock.
     const ok = await writeRemote(uid, matchId, val);
-    if (ok) {
-      markSynced(uid, matchId);
-    } else {
-      // Kept on this device and retried on next load — not lost, just not synced.
-      window.toast('Pick saved on this device but not synced yet — reopen the app when back online.', 'error', 6000);
-    }
+    if (ok) markSynced(uid, matchId);
+    // On failure the pick stays cached + flagged unsynced (auto-reflushed on the
+    // next load); the caller surfaces a clear retry message instead of a fake
+    // "locked in" confirmation.
+    return ok;
   }
   function signIn() {
     // Popup on every device. signInWithRedirect loses the session on mobile

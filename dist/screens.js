@@ -553,6 +553,7 @@ function MatchDetail({
   const [a, setA] = useS1(existing ? existing.a : null);
   const [b, setB] = useS1(existing ? existing.b : null);
   const [saved, setSaved] = useS1(false);
+  const [saving, setSaving] = useS1(false);
   if (!m) return null;
   const locked = isLocked(m);
   const finished = m.status === 'finished';
@@ -562,13 +563,23 @@ function MatchDetail({
   const isKO = WC.isKnockout(m.stage);
   const pts = finished && existing ? WC.pointsFor(existing, m) : null;
   const until = !locked ? timeUntil(m.kickoff) : null;
-  function save() {
-    if (!ready || locked) return;
+  async function save() {
+    if (!ready || locked || saving) return;
     const isExact = finished && m.scoreA === a && m.scoreB === b;
-    setPrediction(matchId, {
+    // Wait for the server to actually confirm the write before celebrating. The
+    // old code fired confetti + "locked in" immediately, even when the write
+    // failed — so users on flaky/mobile connections were told their pick locked
+    // when it never reached the database, and it "cancelled" on their return.
+    setSaving(true);
+    const ok = await setPrediction(matchId, {
       a,
       b
     });
+    setSaving(false);
+    if (!ok) {
+      window.toast('Couldn’t lock your pick — check your connection and tap again.', 'error', 5000);
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     window.fireConfetti({
@@ -873,7 +884,7 @@ function MatchDetail({
     }
   }, "\xB7 extra time"))), /*#__PURE__*/React.createElement("button", {
     onClick: save,
-    disabled: !ready,
+    disabled: !ready || saving,
     className: "heavy",
     style: {
       width: '100%',
@@ -882,13 +893,13 @@ function MatchDetail({
       fontSize: 16,
       letterSpacing: '.05em',
       border: '3px solid #000',
-      background: saved ? '#2CB82A' : ready ? '#E8192C' : 'var(--chip)',
-      color: ready ? '#fff' : 'var(--muted)',
-      boxShadow: ready ? '6px 6px 0 0 #000' : 'none',
+      background: saved ? '#2CB82A' : saving ? '#1144CC' : ready ? '#E8192C' : 'var(--chip)',
+      color: ready || saving ? '#fff' : 'var(--muted)',
+      boxShadow: ready && !saving ? '6px 6px 0 0 #000' : 'none',
       transition: 'all .2s'
     },
     onMouseDown: e => {
-      if (ready) {
+      if (ready && !saving) {
         e.currentTarget.style.transform = 'translate(3px,3px)';
         e.currentTarget.style.boxShadow = '3px 3px 0 0 #000';
       }
@@ -901,7 +912,7 @@ function MatchDetail({
       e.currentTarget.style.transform = '';
       e.currentTarget.style.boxShadow = '6px 6px 0 0 #000';
     }
-  }, saved ? '✓ LOCKED IN!' : existing ? 'UPDATE PREDICTION' : 'LOCK IT IN')), !finished && /*#__PURE__*/React.createElement(CrowdBar, {
+  }, saving ? '⏳ LOCKING…' : saved ? '✓ LOCKED IN!' : existing ? 'UPDATE PREDICTION' : 'LOCK IT IN')), !finished && /*#__PURE__*/React.createElement(CrowdBar, {
     m: m
   }), m.group && /*#__PURE__*/React.createElement("div", {
     style: {
