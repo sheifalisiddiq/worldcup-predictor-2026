@@ -103,7 +103,9 @@ function App() {
       loadPredictions(user.uid).finally(() => setPredsReady(true));
 
       // Profile (favTeam) — separate REST read so its failure can never block
-      // predictions. Creates the user row on first sign-in.
+      // predictions. Creates the user row on first sign-in. No points fields are
+      // stored: points are always derived from raw picks (WC.computeUserTotals),
+      // so there is no counter that can drift out of sync with reality.
       (async () => {
         try {
           const url = await dbUrl('/users/' + user.uid + '.json');
@@ -119,10 +121,6 @@ function App() {
                 email: user.email || '',
                 photoURL: user.photoURL || '',
                 favTeam: 'Argentina',
-                totalPoints: 0,
-                exactScores: 0,
-                correctResults: 0,
-                predictionsCount: 0,
                 createdAt: { '.sv': 'timestamp' },
               }),
             });
@@ -317,7 +315,6 @@ function App() {
   async function setPrediction(matchId, val) {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const isNew = !predictions[matchId];
     // Optimistic update + device cache, marked unsynced until the server
     // confirms. Writing to localStorage here is what stops a failed REST write
     // from losing the pick on the next reload.
@@ -331,13 +328,6 @@ function App() {
     const ok = await writeRemote(uid, matchId, val);
     if (ok) {
       markSynced(uid, matchId);
-      if (isNew) {
-        window.fbDb.ref('users/' + uid).transaction(data => {
-          if (!data) return data;
-          data.predictionsCount = (data.predictionsCount || 0) + 1;
-          return data;
-        });
-      }
     } else {
       // Kept on this device and retried on next load — not lost, just not synced.
       window.toast('Pick saved on this device but not synced yet — reopen the app when back online.', 'error', 6000);
