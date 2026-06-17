@@ -1,0 +1,25 @@
+name: Match reminders
+
+# Free hourly scheduler (Vercel Hobby cron only runs once/day). Pings the app's
+# reminder endpoint; the endpoint decides who actually needs a nudge.
+# GitHub cron can drift ±15 min — fine for a ~5h-ahead reminder.
+on:
+  schedule:
+    - cron: '0 * * * *'   # top of every hour (UTC)
+  workflow_dispatch: {}    # manual "Run workflow" button for testing
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger reminder endpoint
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET not set yet — reminders not configured. Skipping."
+            exit 0
+          fi
+          curl -fsS --max-time 90 \
+            "https://worldcuppredictor-five.vercel.app/api/remind?key=${CRON_SECRET}" \
+            && echo "" && echo "reminder run ok"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

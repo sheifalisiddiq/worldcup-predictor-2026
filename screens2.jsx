@@ -467,6 +467,87 @@ function PlayerDetail({ player, picks, matches, onBack }) {
   );
 }
 
+/* Store this device's FCM token under the signed-in user so the reminder job
+   can target it. Keyed by the token (FCM web tokens use a key-safe alphabet),
+   so re-enabling on the same device just overwrites — no duplicates. */
+async function saveFcmToken(token) {
+  const user = window.fbAuth && window.fbAuth.currentUser;
+  if (!user) return false;
+  const tok = await user.getIdToken();
+  const base = window.fbDb.ref().toString().replace(/\/+$/, '');
+  const res = await fetch(
+    base + '/users/' + user.uid + '/fcmTokens/' + encodeURIComponent(token) + '.json?auth=' + encodeURIComponent(tok),
+    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: 'true' }
+  );
+  return res.ok;
+}
+
+/* =================== MATCH-REMINDER OPT-IN CARD =================== */
+function ReminderCard() {
+  // Hidden until the owner pastes the public VAPID key into firebase-config.js
+  // (window.WC_VAPID) and the browser actually supports web push.
+  const canPush = typeof window !== 'undefined' && 'Notification' in window
+    && window.fbMessaging && window.WC_VAPID;
+  const isIOS = /iphone|ipad|ipod/i.test((typeof navigator !== 'undefined' && navigator.userAgent) || '');
+  const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+    || window.navigator.standalone === true;
+
+  const [state, setState] = useS2(() => {
+    if (!('Notification' in window)) return 'unsupported';
+    if (Notification.permission === 'granted') return 'on';
+    if (Notification.permission === 'denied') return 'blocked';
+    return 'idle';
+  });
+
+  if (!canPush) return null;
+  // iPhone: web push only works from an installed (Home Screen) PWA.
+  const iosNeedsInstall = isIOS && !standalone;
+
+  async function enable() {
+    try {
+      setState('working');
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { setState(perm === 'denied' ? 'blocked' : 'idle'); return; }
+      const token = await window.fbMessaging.getToken({ vapidKey: window.WC_VAPID });
+      if (!token) { setState('idle'); window.toast('Could not enable reminders.', 'error', 3000); return; }
+      const ok = await saveFcmToken(token);
+      setState('on');
+      window.toast(ok ? '🔔 Reminders on!' : 'Enabled on this device.', ok ? 'success' : 'info', 2500);
+    } catch (e) {
+      console.error('Enable reminders error:', e);
+      setState('idle');
+      window.toast('Could not enable reminders.', 'error', 3000);
+    }
+  }
+
+  let body;
+  if (state === 'on') {
+    body = <div className="mono" style={{ fontSize:12, color:'#2CB82A', fontWeight:700 }}>✓ Reminders on — we'll ping you ~5h before a match you haven't predicted.</div>;
+  } else if (state === 'blocked') {
+    body = <div className="mono" style={{ fontSize:11, color:'var(--muted)', fontWeight:600 }}>Notifications are blocked. Turn them on for this site in your browser settings, then reopen.</div>;
+  } else if (iosNeedsInstall) {
+    body = <div className="mono" style={{ fontSize:11, color:'var(--muted)', fontWeight:600 }}>On iPhone: tap Share → <b>Add to Home Screen</b>, open the app from that icon, then enable here.</div>;
+  } else {
+    body = (
+      <button onClick={enable} disabled={state === 'working'} className="heavy" style={{
+        background: state === 'working' ? '#1144CC' : '#E8192C', color:'#fff',
+        border:'3px solid #000', boxShadow:'4px 4px 0 0 #000',
+        padding:'10px 16px', fontSize:13, letterSpacing:'.04em',
+      }}>{state === 'working' ? 'ENABLING…' : '🔔 ENABLE REMINDERS'}</button>
+    );
+  }
+
+  return (
+    <div className="bd hard" style={{ background:'var(--panel)', padding:14, marginBottom:18,
+      borderTop:'6px solid #FFC800' }}>
+      <div className="heavy" style={{ fontSize:11, letterSpacing:'.09em', color:'var(--muted)', marginBottom:8 }}>
+        🔔 MATCH REMINDERS
+      </div>
+      {body}
+    </div>
+  );
+}
+
 /* =================== PROFILE =================== */
 function Profile({ predictions, onOpen, matches }) {
   const matchData = matches && matches.length > 0 ? matches : WC.matches;
@@ -635,6 +716,9 @@ function Profile({ predictions, onOpen, matches }) {
             </div>
           ))}
         </div>
+
+        {/* Match-reminder opt-in (hidden until push is configured) */}
+        <ReminderCard />
 
         {/* Results breakdown bar */}
         <div className="bd" style={{ background:'var(--panel)', padding:14, marginBottom:18 }}>

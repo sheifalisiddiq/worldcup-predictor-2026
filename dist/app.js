@@ -269,6 +269,23 @@ function App() {
       cancelled = true;
     };
   }, [signed]);
+
+  // Deep link from a push notification: /?match=<id> opens that match once the
+  // user is signed in and fixtures are loaded. Clear the query afterwards so a
+  // plain refresh doesn't keep reopening it.
+  useEffect(() => {
+    if (!signed || !matchesReady) return;
+    let mid;
+    try {
+      mid = new URLSearchParams(window.location.search).get('match');
+    } catch (e) {}
+    if (mid) {
+      setOpenMatch(mid);
+      try {
+        window.history.replaceState({}, '', window.location.pathname);
+      } catch (e) {}
+    }
+  }, [signed, matchesReady]);
   useEffect(() => {
     function onKey(e) {
       if (!signed || openMatch) return;
