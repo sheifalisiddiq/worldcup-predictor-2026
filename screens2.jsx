@@ -134,7 +134,7 @@ function Leaderboard({ matches }) {
   }
 
   return (
-    <div ref={lbScrollRef} style={{ height:'100%', overflowY:'auto', position:'relative',
+    <div ref={lbScrollRef} style={{ height:'100%', overflowY:'auto', overflowX:'hidden', position:'relative',
       background:'var(--bg)', containerType:'inline-size' }}>
       <RingsBackground intensity="subtle" seed={7} />
       <div style={{ position:'relative', padding:'18px 16px 30px' }}>
@@ -346,7 +346,7 @@ function PlayerDetail({ player, picks, matches, onBack }) {
   ];
 
   return (
-    <div style={{ height:'100%', overflowY:'auto', position:'relative',
+    <div style={{ height:'100%', overflowY:'auto', overflowX:'hidden', position:'relative',
       background:'var(--bg)', containerType:'inline-size', animation:'screen-slide-right .25s' }}>
       <RingsBackground intensity="subtle" seed={9} />
       <div style={{ position:'relative', padding:'14px 16px 30px' }}>
@@ -643,7 +643,7 @@ function Profile({ predictions, onOpen, matches }) {
   ];
 
   return (
-    <div ref={profileScrollRef} style={{ height:'100%', overflowY:'auto', position:'relative',
+    <div ref={profileScrollRef} style={{ height:'100%', overflowY:'auto', overflowX:'hidden', position:'relative',
       background:'var(--bg)', containerType:'inline-size' }}>
       <RingsBackground intensity="subtle" seed={9} />
       <div style={{ position:'relative', padding:'18px 16px 30px' }}>

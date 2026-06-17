@@ -537,10 +537,12 @@ function App() {
       onSignIn: signIn
     });
     if (openMatch) return /*#__PURE__*/React.createElement(MatchDetail, {
+      key: openMatch,
       matchId: openMatch,
       predictions: predictions,
       setPrediction: setPrediction,
       onBack: () => setOpenMatch(null),
+      onOpen: id => setOpenMatch(id),
       matches: matchList
     });
     if (tab === 'matches') return /*#__PURE__*/React.createElement(Matches, {
@@ -718,33 +720,113 @@ function MobileContent({
   setTab,
   product
 }) {
-  const touchStartX = useRef(null);
-  const touchStartY = useRef(null);
-  function onTouchStart(e) {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-  }
-  function onTouchEnd(e) {
-    if (touchStartX.current === null || openMatch) return;
-    const dx = e.changedTouches[0].clientX - touchStartX.current;
-    const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
-    touchStartX.current = null;
-    touchStartY.current = null;
-    // Ignore if mostly vertical (scroll, not swipe) or too short
-    if (Math.abs(dx) < 60 || dy > Math.abs(dx) * 0.65) return;
+  const start = useRef(null); // { x, y }
+  const engaged = useRef(false); // horizontal gesture locked in
+  const lastDx = useRef(0);
+  const [drag, setDrag] = useState(null); // { dx, target, progress, dir }
+
+  // Commit threshold: a flick must travel ~a quarter of the screen to switch
+  // tabs, so an accidental nudge just snaps back instead of jumping.
+  const COMMIT = Math.min(110, (typeof window !== 'undefined' ? window.innerWidth : 360) * 0.25);
+  function targetFor(dx) {
     const idx = TAB_ORDER.indexOf(tab);
-    if (dx < 0 && idx < TAB_ORDER.length - 1) setTab(TAB_ORDER[idx + 1]);
-    if (dx > 0 && idx > 0) setTab(TAB_ORDER[idx - 1]);
+    const ti = idx + (dx < 0 ? 1 : -1);
+    return ti >= 0 && ti < TAB_ORDER.length ? TAB_ORDER[ti] : null;
   }
+  function reset() {
+    start.current = null;
+    engaged.current = false;
+    lastDx.current = 0;
+  }
+  function onTouchStart(e) {
+    if (openMatch) return;
+    start.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY
+    };
+    engaged.current = false;
+    lastDx.current = 0;
+  }
+  function onTouchMove(e) {
+    if (!start.current || openMatch) return;
+    const dx = e.touches[0].clientX - start.current.x;
+    const dy = e.touches[0].clientY - start.current.y;
+    if (!engaged.current) {
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2) engaged.current = true;else if (Math.abs(dy) > 12) {
+        start.current = null;
+        return;
+      } // vertical scroll → let it be
+      else return;
+    }
+    lastDx.current = dx;
+    setDrag({
+      dx,
+      target: targetFor(dx),
+      progress: Math.min(1, Math.abs(dx) / COMMIT),
+      dir: dx < 0 ? 1 : -1
+    });
+  }
+  function onTouchEnd() {
+    const dx = lastDx.current;
+    const ok = engaged.current && Math.abs(dx) >= COMMIT;
+    const target = targetFor(dx);
+    reset();
+    setDrag(null);
+    if (ok && target) setTab(target);
+  }
+
+  // Peek the screen toward the drag only when there's somewhere to go.
+  const peek = drag && drag.target ? Math.max(-56, Math.min(56, drag.dx * 0.3)) : 0;
+  const targetTab = drag && drag.target ? TABS.find(t => t.id === drag.target) : null;
   return /*#__PURE__*/React.createElement("div", {
     style: {
       height: '100%',
       overflowY: 'hidden',
-      touchAction: 'pan-y'
+      touchAction: 'pan-y',
+      position: 'relative'
     },
     onTouchStart: onTouchStart,
+    onTouchMove: onTouchMove,
     onTouchEnd: onTouchEnd
-  }, product);
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: '100%',
+      transform: peek ? `translateX(${peek}px)` : 'none',
+      transition: drag ? 'none' : 'transform .2s cubic-bezier(.34,1.1,.64,1)'
+    }
+  }, product), targetTab && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'absolute',
+      top: '50%',
+      ...(drag.dir === 1 ? {
+        right: 14
+      } : {
+        left: 14
+      }),
+      transform: `translateY(-50%) scale(${0.7 + drag.progress * 0.3})`,
+      opacity: Math.max(0.3, drag.progress),
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: 4,
+      background: drag.progress >= 1 ? targetTab.color : 'var(--panel)',
+      color: drag.progress >= 1 ? '#fff' : targetTab.color,
+      border: '3px solid #000',
+      boxShadow: '4px 4px 0 0 #000',
+      padding: '10px 12px',
+      pointerEvents: 'none',
+      zIndex: 40,
+      transition: 'background .12s, color .12s'
+    }
+  }, /*#__PURE__*/React.createElement(targetTab.Ico, {
+    size: 22
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "heavy",
+    style: {
+      fontSize: 9,
+      letterSpacing: '.08em'
+    }
+  }, drag.progress >= 1 ? 'RELEASE' : targetTab.label)));
 }
 
 /* ── Desktop top nav ── */

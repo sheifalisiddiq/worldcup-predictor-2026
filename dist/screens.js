@@ -26,6 +26,7 @@ function Landing({
     style: {
       height: '100%',
       overflowY: 'auto',
+      overflowX: 'hidden',
       position: 'relative',
       background: '#071A40',
       containerType: 'inline-size'
@@ -396,6 +397,7 @@ function Matches({
     style: {
       height: '100%',
       overflowY: 'auto',
+      overflowX: 'hidden',
       position: 'relative',
       background: 'var(--bg)',
       containerType: 'inline-size'
@@ -563,6 +565,7 @@ function MatchDetail({
   predictions,
   setPrediction,
   onBack,
+  onOpen,
   matches
 }) {
   const matchData = matches && matches.length > 0 ? matches : WC.matches;
@@ -662,6 +665,7 @@ function MatchDetail({
     style: {
       height: '100%',
       overflowY: 'auto',
+      overflowX: 'hidden',
       position: 'relative',
       background: 'var(--bg)',
       containerType: 'inline-size',
@@ -946,7 +950,7 @@ function MatchDetail({
     key: match.id,
     m: match,
     prediction: predictions[match.id],
-    onOpen: () => onBack()
+    onOpen: () => onOpen && onOpen(match.id)
   }))))));
 }
 function ResultBreakdown({
@@ -1122,14 +1126,12 @@ async function fetchMatchCrowd(matchId) {
 function CrowdBar({
   m
 }) {
-  // Real crowd split, revealed only once picks lock — before kickoff it stays
-  // hidden so it can't be used to copy the consensus.
-  const revealed = isLocked(m) || m.status === 'live' || m.status === 'finished';
+  // Real crowd split, shown live as picks come in (owner's call — surfaced during
+  // the prediction phase, when people actually look, not just after kickoff).
   const teamA = m.teamA || 'Team A';
   const teamB = m.teamB || 'Team B';
   const [crowd, setCrowd] = useS1(null);
   useE1(() => {
-    if (!revealed) return;
     let cancelled = false;
     fetchMatchCrowd(m.id).then(c => {
       if (!cancelled) setCrowd(c);
@@ -1137,7 +1139,7 @@ function CrowdBar({
     return () => {
       cancelled = true;
     };
-  }, [m.id, revealed]);
+  }, [m.id]);
   const heading = /*#__PURE__*/React.createElement("div", {
     className: "heavy",
     style: {
@@ -1147,23 +1149,6 @@ function CrowdBar({
       marginBottom: 6
     }
   }, "HOW THE CROWD ", m.status === 'finished' ? 'CALLED IT' : 'CALLS IT', crowd && crowd.total ? ` · ${crowd.total} ${crowd.total === 1 ? 'PICK' : 'PICKS'}` : '');
-  if (!revealed) {
-    return /*#__PURE__*/React.createElement("div", {
-      style: {
-        marginTop: 16
-      }
-    }, heading, /*#__PURE__*/React.createElement("div", {
-      className: "bd",
-      style: {
-        borderWidth: 2,
-        padding: '12px 14px',
-        textAlign: 'center',
-        color: 'var(--muted)',
-        fontSize: 12,
-        fontWeight: 600
-      }
-    }, "\uD83D\uDD12 Revealed at kickoff"));
-  }
   if (!crowd) return null; // loading / unavailable
   if (!crowd.total) {
     return /*#__PURE__*/React.createElement("div", {
@@ -1180,7 +1165,7 @@ function CrowdBar({
         fontSize: 12,
         fontWeight: 600
       }
-    }, "No picks for this match."));
+    }, "No picks yet."));
   }
   const pct = n => Math.round(n / crowd.total * 100);
   const wA = pct(crowd.a),

@@ -163,6 +163,7 @@ function Leaderboard({
     style: {
       height: '100%',
       overflowY: 'auto',
+      overflowX: 'hidden',
       position: 'relative',
       background: 'var(--bg)',
       containerType: 'inline-size'
@@ -566,6 +567,7 @@ function PlayerDetail({
     style: {
       height: '100%',
       overflowY: 'auto',
+      overflowX: 'hidden',
       position: 'relative',
       background: 'var(--bg)',
       containerType: 'inline-size',
@@ -1131,6 +1133,7 @@ function Profile({
     style: {
       height: '100%',
       overflowY: 'auto',
+      overflowX: 'hidden',
       position: 'relative',
       background: 'var(--bg)',
       containerType: 'inline-size'

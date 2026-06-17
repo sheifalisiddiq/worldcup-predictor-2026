@@ -17,7 +17,7 @@ function Landing({ onSignIn }) {
   }
 
   return (
-    <div ref={scrollRef} style={{ height:'100%', overflowY:'auto', position:'relative',
+    <div ref={scrollRef} style={{ height:'100%', overflowY:'auto', overflowX:'hidden', position:'relative',
       background:'#071A40', containerType:'inline-size' }}>
 
       {/* Sunburst */}
@@ -256,7 +256,7 @@ function Matches({ predictions, onOpen, loading, matches }) {
   const liveMatches = matchData.filter(m => m.status === 'live');
 
   return (
-    <div ref={feedRef} style={{ height:'100%', overflowY:'auto', position:'relative',
+    <div ref={feedRef} style={{ height:'100%', overflowY:'auto', overflowX:'hidden', position:'relative',
       background:'var(--bg)', containerType:'inline-size' }}>
       <RingsBackground intensity="subtle" seed={3} />
       <div style={{ position:'relative', padding:'18px 16px 30px' }}>
@@ -351,7 +351,7 @@ function Matches({ predictions, onOpen, loading, matches }) {
 }
 
 /* =================== MATCH DETAIL =================== */
-function MatchDetail({ matchId, predictions, setPrediction, onBack, matches }) {
+function MatchDetail({ matchId, predictions, setPrediction, onBack, onOpen, matches }) {
   const matchData = matches && matches.length > 0 ? matches : WC.matches;
   const m = matchData.find((x) => x.id === matchId);
   const existing = predictions[matchId];
@@ -422,7 +422,7 @@ function MatchDetail({ matchId, predictions, setPrediction, onBack, matches }) {
   };
 
   return (
-    <div style={{ height:'100%', overflowY:'auto', position:'relative',
+    <div style={{ height:'100%', overflowY:'auto', overflowX:'hidden', position:'relative',
       background:'var(--bg)', containerType:'inline-size', animation:'screen-slide-right .25s' }}>
       <RingsBackground intensity="subtle" seed={5} />
       <div style={{ position:'relative', padding:'14px 16px 40px' }}>
@@ -537,7 +537,7 @@ function MatchDetail({ matchId, predictions, setPrediction, onBack, matches }) {
             <DayHeading>OTHER GROUP {m.group} MATCHES</DayHeading>
             <div style={{ display:'grid', gap:10, marginTop:8 }}>
               {matchData.filter(x => x.group === m.group && x.id !== m.id).slice(0, 3).map(match => (
-                <MatchCard key={match.id} m={match} prediction={predictions[match.id]} onOpen={() => onBack()} />
+                <MatchCard key={match.id} m={match} prediction={predictions[match.id]} onOpen={() => onOpen && onOpen(match.id)} />
               ))}
             </div>
           </div>
@@ -623,18 +623,16 @@ async function fetchMatchCrowd(matchId) {
 }
 
 function CrowdBar({ m }) {
-  // Real crowd split, revealed only once picks lock — before kickoff it stays
-  // hidden so it can't be used to copy the consensus.
-  const revealed = isLocked(m) || m.status === 'live' || m.status === 'finished';
+  // Real crowd split, shown live as picks come in (owner's call — surfaced during
+  // the prediction phase, when people actually look, not just after kickoff).
   const teamA = m.teamA || 'Team A';
   const teamB = m.teamB || 'Team B';
   const [crowd, setCrowd] = useS1(null);
   useE1(() => {
-    if (!revealed) return;
     let cancelled = false;
     fetchMatchCrowd(m.id).then(c => { if (!cancelled) setCrowd(c); }).catch(() => {});
     return () => { cancelled = true; };
-  }, [m.id, revealed]);
+  }, [m.id]);
 
   const heading = (
     <div className="heavy" style={{ fontSize:11, letterSpacing:'.1em', color:'var(--muted)', marginBottom:6 }}>
@@ -643,22 +641,13 @@ function CrowdBar({ m }) {
     </div>
   );
 
-  if (!revealed) {
-    return (
-      <div style={{ marginTop:16 }}>
-        {heading}
-        <div className="bd" style={{ borderWidth:2, padding:'12px 14px', textAlign:'center',
-          color:'var(--muted)', fontSize:12, fontWeight:600 }}>🔒 Revealed at kickoff</div>
-      </div>
-    );
-  }
   if (!crowd) return null; // loading / unavailable
   if (!crowd.total) {
     return (
       <div style={{ marginTop:16 }}>
         {heading}
         <div className="bd" style={{ borderWidth:2, padding:'12px 14px', textAlign:'center',
-          color:'var(--muted)', fontSize:12, fontWeight:600 }}>No picks for this match.</div>
+          color:'var(--muted)', fontSize:12, fontWeight:600 }}>No picks yet.</div>
       </div>
     );
   }
