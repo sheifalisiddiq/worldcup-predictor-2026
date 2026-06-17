@@ -530,7 +530,7 @@ function MatchDetail({ matchId, predictions, setPrediction, onBack, matches }) {
           </div>
         )}
 
-        {!finished && <CrowdBar m={m} />}
+        <CrowdBar m={m} />
 
         {m.group && (
           <div style={{ marginTop:20 }}>
@@ -602,18 +602,72 @@ function LockedPanel({ m, prediction }) {
   );
 }
 
+/* Tally how everyone actually predicted this match (A win / draw / B win).
+   One REST read of all picks — fine at this app's scale. */
+async function fetchMatchCrowd(matchId) {
+  const user = window.fbAuth && window.fbAuth.currentUser;
+  if (!user) return null;
+  const tok = await user.getIdToken();
+  const base = window.fbDb.ref().toString().replace(/\/+$/, '');
+  const res = await fetch(base + '/predictions.json?auth=' + encodeURIComponent(tok));
+  if (!res.ok) return null;
+  const data = await res.json();
+  let a = 0, d = 0, b = 0;
+  Object.values(data || {}).forEach(p => {
+    if (!p || String(p.matchId) !== String(matchId) || p.homeGoals == null || p.awayGoals == null) return;
+    if (p.homeGoals > p.awayGoals) a++;
+    else if (p.homeGoals < p.awayGoals) b++;
+    else d++;
+  });
+  return { a, d, b, total: a + d + b };
+}
+
 function CrowdBar({ m }) {
-  const seed = parseInt(m.id.slice(1)) || 1;
-  const wA = 28 + (seed * 7) % 44;
-  const dr = 12 + (seed * 3) % 14;
-  const wB = 100 - wA - dr;
+  // Real crowd split, revealed only once picks lock — before kickoff it stays
+  // hidden so it can't be used to copy the consensus.
+  const revealed = isLocked(m) || m.status === 'live' || m.status === 'finished';
   const teamA = m.teamA || 'Team A';
   const teamB = m.teamB || 'Team B';
+  const [crowd, setCrowd] = useS1(null);
+  useE1(() => {
+    if (!revealed) return;
+    let cancelled = false;
+    fetchMatchCrowd(m.id).then(c => { if (!cancelled) setCrowd(c); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [m.id, revealed]);
+
+  const heading = (
+    <div className="heavy" style={{ fontSize:11, letterSpacing:'.1em', color:'var(--muted)', marginBottom:6 }}>
+      HOW THE CROWD {m.status === 'finished' ? 'CALLED IT' : 'CALLS IT'}
+      {crowd && crowd.total ? ` · ${crowd.total} ${crowd.total === 1 ? 'PICK' : 'PICKS'}` : ''}
+    </div>
+  );
+
+  if (!revealed) {
+    return (
+      <div style={{ marginTop:16 }}>
+        {heading}
+        <div className="bd" style={{ borderWidth:2, padding:'12px 14px', textAlign:'center',
+          color:'var(--muted)', fontSize:12, fontWeight:600 }}>🔒 Revealed at kickoff</div>
+      </div>
+    );
+  }
+  if (!crowd) return null; // loading / unavailable
+  if (!crowd.total) {
+    return (
+      <div style={{ marginTop:16 }}>
+        {heading}
+        <div className="bd" style={{ borderWidth:2, padding:'12px 14px', textAlign:'center',
+          color:'var(--muted)', fontSize:12, fontWeight:600 }}>No picks for this match.</div>
+      </div>
+    );
+  }
+
+  const pct = n => Math.round((n / crowd.total) * 100);
+  const wA = pct(crowd.a), dr = pct(crowd.d), wB = Math.max(0, 100 - wA - dr);
   return (
     <div style={{ marginTop:16 }}>
-      <div className="heavy" style={{ fontSize:11, letterSpacing:'.1em', color:'var(--muted)', marginBottom:6 }}>
-        HOW THE CROWD CALLS IT
-      </div>
+      {heading}
       <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
         <span className="mono" style={{ fontSize:10, fontWeight:700, color:'#1144CC' }}>{teamA.split(' ')[0]}</span>
         <span className="mono" style={{ fontSize:10, fontWeight:700, color:'var(--muted)' }}>DRAW</span>
@@ -621,11 +675,11 @@ function CrowdBar({ m }) {
       </div>
       <div className="bd" style={{ display:'flex', borderWidth:2, overflow:'hidden' }}>
         <div style={{ width:wA+'%', background:'#1144CC', padding:'7px 8px', color:'#fff',
-          fontSize:11, fontWeight:800, fontFamily:'Noto Sans', whiteSpace:'nowrap', overflow:'hidden' }}>{wA}%</div>
+          fontSize:11, fontWeight:800, fontFamily:'Noto Sans', whiteSpace:'nowrap', overflow:'hidden' }}>{wA > 8 ? wA + '%' : ''}</div>
         <div style={{ width:dr+'%', background:'var(--muted)', padding:'7px 4px', color:'#fff',
-          fontSize:11, fontWeight:800, fontFamily:'Noto Sans', whiteSpace:'nowrap', overflow:'hidden' }}>{dr}%</div>
+          fontSize:11, fontWeight:800, fontFamily:'Noto Sans', whiteSpace:'nowrap', overflow:'hidden' }}>{dr > 8 ? dr + '%' : ''}</div>
         <div style={{ width:wB+'%', background:'#E8192C', padding:'7px 8px', color:'#fff',
-          fontSize:11, fontWeight:800, fontFamily:'Noto Sans', whiteSpace:'nowrap', overflow:'hidden', textAlign:'right' }}>{wB}%</div>
+          fontSize:11, fontWeight:800, fontFamily:'Noto Sans', whiteSpace:'nowrap', overflow:'hidden', textAlign:'right' }}>{wB > 8 ? wB + '%' : ''}</div>
       </div>
     </div>
   );

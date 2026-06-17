@@ -930,7 +930,7 @@ function MatchDetail({
       e.currentTarget.style.transform = '';
       e.currentTarget.style.boxShadow = '6px 6px 0 0 #000';
     }
-  }, saving ? '⏳ LOCKING…' : saved ? '✓ LOCKED IN!' : existing ? 'UPDATE PREDICTION' : 'LOCK IT IN')), !finished && /*#__PURE__*/React.createElement(CrowdBar, {
+  }, saving ? '⏳ LOCKING…' : saved ? '✓ LOCKED IN!' : existing ? 'UPDATE PREDICTION' : 'LOCK IT IN')), /*#__PURE__*/React.createElement(CrowdBar, {
     m: m
   }), m.group && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1094,20 +1094,51 @@ function LockedPanel({
     }
   }, "Kickoff passed \u2014 too late to predict this one."));
 }
+
+/* Tally how everyone actually predicted this match (A win / draw / B win).
+   One REST read of all picks — fine at this app's scale. */
+async function fetchMatchCrowd(matchId) {
+  const user = window.fbAuth && window.fbAuth.currentUser;
+  if (!user) return null;
+  const tok = await user.getIdToken();
+  const base = window.fbDb.ref().toString().replace(/\/+$/, '');
+  const res = await fetch(base + '/predictions.json?auth=' + encodeURIComponent(tok));
+  if (!res.ok) return null;
+  const data = await res.json();
+  let a = 0,
+    d = 0,
+    b = 0;
+  Object.values(data || {}).forEach(p => {
+    if (!p || String(p.matchId) !== String(matchId) || p.homeGoals == null || p.awayGoals == null) return;
+    if (p.homeGoals > p.awayGoals) a++;else if (p.homeGoals < p.awayGoals) b++;else d++;
+  });
+  return {
+    a,
+    d,
+    b,
+    total: a + d + b
+  };
+}
 function CrowdBar({
   m
 }) {
-  const seed = parseInt(m.id.slice(1)) || 1;
-  const wA = 28 + seed * 7 % 44;
-  const dr = 12 + seed * 3 % 14;
-  const wB = 100 - wA - dr;
+  // Real crowd split, revealed only once picks lock — before kickoff it stays
+  // hidden so it can't be used to copy the consensus.
+  const revealed = isLocked(m) || m.status === 'live' || m.status === 'finished';
   const teamA = m.teamA || 'Team A';
   const teamB = m.teamB || 'Team B';
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 16
-    }
-  }, /*#__PURE__*/React.createElement("div", {
+  const [crowd, setCrowd] = useS1(null);
+  useE1(() => {
+    if (!revealed) return;
+    let cancelled = false;
+    fetchMatchCrowd(m.id).then(c => {
+      if (!cancelled) setCrowd(c);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [m.id, revealed]);
+  const heading = /*#__PURE__*/React.createElement("div", {
     className: "heavy",
     style: {
       fontSize: 11,
@@ -1115,7 +1146,51 @@ function CrowdBar({
       color: 'var(--muted)',
       marginBottom: 6
     }
-  }, "HOW THE CROWD CALLS IT"), /*#__PURE__*/React.createElement("div", {
+  }, "HOW THE CROWD ", m.status === 'finished' ? 'CALLED IT' : 'CALLS IT', crowd && crowd.total ? ` · ${crowd.total} ${crowd.total === 1 ? 'PICK' : 'PICKS'}` : '');
+  if (!revealed) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 16
+      }
+    }, heading, /*#__PURE__*/React.createElement("div", {
+      className: "bd",
+      style: {
+        borderWidth: 2,
+        padding: '12px 14px',
+        textAlign: 'center',
+        color: 'var(--muted)',
+        fontSize: 12,
+        fontWeight: 600
+      }
+    }, "\uD83D\uDD12 Revealed at kickoff"));
+  }
+  if (!crowd) return null; // loading / unavailable
+  if (!crowd.total) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 16
+      }
+    }, heading, /*#__PURE__*/React.createElement("div", {
+      className: "bd",
+      style: {
+        borderWidth: 2,
+        padding: '12px 14px',
+        textAlign: 'center',
+        color: 'var(--muted)',
+        fontSize: 12,
+        fontWeight: 600
+      }
+    }, "No picks for this match."));
+  }
+  const pct = n => Math.round(n / crowd.total * 100);
+  const wA = pct(crowd.a),
+    dr = pct(crowd.d),
+    wB = Math.max(0, 100 - wA - dr);
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 16
+    }
+  }, heading, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       justifyContent: 'space-between',
@@ -1161,7 +1236,7 @@ function CrowdBar({
       whiteSpace: 'nowrap',
       overflow: 'hidden'
     }
-  }, wA, "%"), /*#__PURE__*/React.createElement("div", {
+  }, wA > 8 ? wA + '%' : ''), /*#__PURE__*/React.createElement("div", {
     style: {
       width: dr + '%',
       background: 'var(--muted)',
@@ -1173,7 +1248,7 @@ function CrowdBar({
       whiteSpace: 'nowrap',
       overflow: 'hidden'
     }
-  }, dr, "%"), /*#__PURE__*/React.createElement("div", {
+  }, dr > 8 ? dr + '%' : ''), /*#__PURE__*/React.createElement("div", {
     style: {
       width: wB + '%',
       background: '#E8192C',
@@ -1186,7 +1261,7 @@ function CrowdBar({
       overflow: 'hidden',
       textAlign: 'right'
     }
-  }, wB, "%")));
+  }, wB > 8 ? wB + '%' : '')));
 }
 Object.assign(window, {
   Landing,
