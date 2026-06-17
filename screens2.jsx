@@ -49,6 +49,9 @@ function Leaderboard({ matches }) {
   const [mounted, setMounted] = useS2(false);
   const [users, setUsers] = useS2([]);
   const [lbLoading, setLbLoading] = useS2(true);
+  const [picksByUid, setPicksByUid] = useS2({});
+  const [boardMatches, setBoardMatches] = useS2([]);
+  const [selectedUid, setSelectedUid] = useS2(null);
   useE2(() => { const t = setTimeout(() => setMounted(true), 100); return () => clearTimeout(t); }, []);
 
   useE2(() => {
@@ -72,6 +75,10 @@ function Leaderboard({ matches }) {
         ms = ms || [];
         const [raw, byUid] = await Promise.all([fetchAllUsersREST(), fetchPredictionsByUidREST()]);
         if (cancelled) return;
+        // Keep the picks + matches so a tapped player's profile can be rendered
+        // with no extra network round-trip.
+        setPicksByUid(byUid);
+        setBoardMatches(ms);
         const list = raw.map(d => {
           const t = WC.computeUserTotals(byUid[d.uid] || {}, ms);
           return {
@@ -107,8 +114,27 @@ function Leaderboard({ matches }) {
 
   const meUser = users.find(u => u.isMe);
 
+  // Restore the board's scroll position when returning from a player's profile
+  // (the board div unmounts while the detail is shown, then remounts at top).
+  const lbScrollRef = useR2(null);
+  useE2(() => {
+    const el = lbScrollRef.current; if (!el) return;
+    el.scrollTop = (WC._scroll && WC._scroll.leaderboard) || 0;
+    const onScroll = () => { (WC._scroll = WC._scroll || {}).leaderboard = el.scrollTop; };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [selectedUid]);
+
+  if (selectedUid) {
+    const player = users.find(u => u.uid === selectedUid);
+    if (player) return (
+      <PlayerDetail player={player} picks={picksByUid[selectedUid] || {}}
+        matches={boardMatches} onBack={() => setSelectedUid(null)} />
+    );
+  }
+
   return (
-    <div style={{ height:'100%', overflowY:'auto', position:'relative',
+    <div ref={lbScrollRef} style={{ height:'100%', overflowY:'auto', position:'relative',
       background:'var(--bg)', containerType:'inline-size' }}>
       <RingsBackground intensity="subtle" seed={7} />
       <div style={{ position:'relative', padding:'18px 16px 30px' }}>
@@ -116,8 +142,8 @@ function Leaderboard({ matches }) {
 
         {/* Your rank banner */}
         {meUser && (
-          <div style={{
-            display:'flex', alignItems:'center', gap:14,
+          <div onClick={() => setSelectedUid(meUser.uid)} style={{
+            display:'flex', alignItems:'center', gap:14, cursor:'pointer',
             background:'#FFC800', color:'#000',
             padding:'10px 16px', border:'3px solid #000',
             boxShadow:'5px 5px 0 0 #000', marginBottom:16,
@@ -171,9 +197,9 @@ function Leaderboard({ matches }) {
                 const baseColor = MEDAL_ACCENT[realRank - 1];
                 const isFirst = realRank === 1;
                 return (
-                  <div key={u.uid} style={{
+                  <div key={u.uid} onClick={() => setSelectedUid(u.uid)} style={{
                     display:'flex', flexDirection:'column', alignItems:'center',
-                    flex:1, maxWidth:130,
+                    flex:1, maxWidth:130, cursor:'pointer',
                     opacity: mounted ? 1 : 0,
                     transform: mounted ? 'none' : 'translateY(24px)',
                     transition:`opacity .45s ${colIdx * .12}s, transform .45s ${colIdx * .12}s`,
@@ -238,7 +264,7 @@ function Leaderboard({ matches }) {
 
             {/* Rest of list */}
             <div style={{ display:'grid', gap:6 }}>
-              {rest.map((u, i) => <LeaderRow key={u.uid} u={u} index={i} mounted={mounted} />)}
+              {rest.map((u, i) => <LeaderRow key={u.uid} u={u} index={i} mounted={mounted} onSelect={setSelectedUid} />)}
             </div>
           </>
         )}
@@ -247,15 +273,16 @@ function Leaderboard({ matches }) {
   );
 }
 
-function LeaderRow({ u, index, mounted }) {
+function LeaderRow({ u, index, mounted, onSelect }) {
   const me = u.isMe;
   const [hover, setHover] = useS2(false);
   return (
     <div className="bd"
+      onClick={() => onSelect && onSelect(u.uid)}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        display:'flex', alignItems:'center', gap:12, padding:'9px 13px',
+        display:'flex', alignItems:'center', gap:12, padding:'9px 13px', cursor:'pointer',
         background: me ? '#FFC800' : 'var(--panel)',
         borderWidth: me ? 3 : 2,
         boxShadow: me ? '4px 4px 0 0 #000' : hover ? '3px 3px 0 0 var(--shadow)' : 'none',
@@ -298,6 +325,148 @@ function LeaderRow({ u, index, mounted }) {
   );
 }
 
+/* =================== PLAYER DETAIL (read-only profile of any player) =================== */
+function PlayerDetail({ player, picks, matches, onBack }) {
+  const t = WC.computeUserTotals(picks, matches);
+  const acc = t.played ? Math.round(((t.exact + t.result) / t.played) * 100) : 0;
+  const missed = Math.max(0, t.played - t.exact - t.result);
+
+  // Only settled (finished) matches are shown — a player's upcoming picks stay
+  // private so nobody can copy them before kickoff.
+  const history = Object.entries(picks)
+    .map(([id, p]) => ({ m: matches.find((x) => x.id === id), p }))
+    .filter((x) => x.m && x.m.status === 'finished')
+    .sort((a, b) => new Date(b.m.kickoff) - new Date(a.m.kickoff));
+
+  const statCards = [
+    { label:'TOTAL POINTS', value:t.total,   color:'#E8192C', emoji:'⭐' },
+    { label:'ACCURACY',     value:acc+'%',   color:'#2CB82A', emoji:'🎯' },
+    { label:'EXACT SCORES', value:t.exact,   color:'#C9A427', emoji:'💎' },
+    { label:'PREDICTIONS',  value:t.picks,   color:'#1144CC', emoji:'📊' },
+  ];
+
+  return (
+    <div style={{ height:'100%', overflowY:'auto', position:'relative',
+      background:'var(--bg)', containerType:'inline-size', animation:'screen-slide-right .25s' }}>
+      <RingsBackground intensity="subtle" seed={9} />
+      <div style={{ position:'relative', padding:'14px 16px 30px' }}>
+
+        <button onClick={onBack} className="heavy" style={{ display:'inline-flex', alignItems:'center',
+          gap:6, fontSize:13, color:'var(--ink)', letterSpacing:'.04em', marginBottom:14 }}>← BACK</button>
+
+        {/* Header card — navy, mirrors the Profile header */}
+        <div className="bd hard-lg" style={{ background:'#071A40', padding:18, marginBottom:16,
+          position:'relative', overflow:'hidden' }}>
+          <div className="hatch" style={{ position:'absolute', inset:0, pointerEvents:'none' }} />
+          <div className="wc26-stripe" style={{ position:'absolute', top:0, left:0, width:'100%' }} />
+          <div style={{ display:'flex', gap:14, alignItems:'center', position:'relative', zIndex:1, marginTop:8 }}>
+            {player.photo ? (
+              <img src={player.photo} alt="" style={{ width:68, height:68, objectFit:'cover',
+                border:'3px solid #fff', boxShadow:'4px 4px 0 0 #000', display:'block' }} />
+            ) : (
+              <div style={{ width:68, height:68, background:'rgba(255,255,255,.15)',
+                border:'3px solid #fff', display:'grid', placeItems:'center', fontSize:32 }}>👤</div>
+            )}
+            <div style={{ minWidth:0, flex:1 }}>
+              <div className="display" style={{ fontSize:26, color:'#FDFCFA', lineHeight:.9,
+                overflow:'hidden', textOverflow:'ellipsis' }}>{player.displayName}</div>
+              <div style={{ display:'inline-flex', alignItems:'center', gap:7, marginTop:8,
+                background:'rgba(255,255,255,.1)', border:'2px solid rgba(255,255,255,.25)', padding:'5px 10px' }}>
+                <Flag code={player.favCode} size={20} />
+                <span className="mono" style={{ fontSize:11, color:'rgba(255,255,255,.85)', fontWeight:600 }}>
+                  {t.total} pts
+                </span>
+              </div>
+            </div>
+            <div className="bd" style={{ background:'#C9A427', color:'#000', padding:'7px 11px',
+              textAlign:'center', boxShadow:'3px 3px 0 0 #000' }}>
+              <div className="mono" style={{ fontSize:9, fontWeight:800, letterSpacing:'.09em' }}>RANK</div>
+              <div className="display" style={{ fontSize:26, lineHeight:.82 }}>#{player.rank || '—'}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Stat grid */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:10, marginBottom:18 }}>
+          {statCards.map(({ label, value, color, emoji }) => (
+            <div key={label} className="bd hard" style={{ background:'var(--panel)', padding:'14px',
+              borderTop:`6px solid ${color}` }}>
+              <div style={{ fontSize:22, marginBottom:5 }}>{emoji}</div>
+              <div className="display" style={{ fontSize:36, color:'var(--ink)', lineHeight:.85 }}>
+                {typeof value === 'number' ? <AnimNum value={value} /> : value}
+              </div>
+              <div className="heavy" style={{ fontSize:10, letterSpacing:'.1em', color:'var(--muted)', marginTop:5 }}>
+                {label}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Results breakdown bar */}
+        <div className="bd" style={{ background:'var(--panel)', padding:14, marginBottom:18 }}>
+          <div className="heavy" style={{ fontSize:11, letterSpacing:'.09em', color:'var(--muted)', marginBottom:8 }}>
+            RESULTS BREAKDOWN · {t.played} SETTLED
+          </div>
+          <div className="bd" style={{ display:'flex', borderWidth:2, height:30, overflow:'hidden' }}>
+            <div style={{ width:(t.played ? (t.exact/t.played)*100 : 0)+'%',
+              background:'#2CB82A', transition:'width 1s ease' }} />
+            <div style={{ width:(t.played ? (t.result/t.played)*100 : 0)+'%',
+              background:'#FFC800', transition:'width 1s ease .1s' }} />
+            <div style={{ flex:1, background:'var(--chip)' }} />
+          </div>
+          <div style={{ display:'flex', gap:14, marginTop:8, flexWrap:'wrap' }}>
+            {[
+              ['#2CB82A', `${t.exact} exact`],
+              ['#FFC800', `${t.result} result`],
+              ['var(--chip)', `${missed} missed`],
+            ].map(([c, label]) => (
+              <span key={label} style={{ display:'inline-flex', alignItems:'center', gap:6,
+                fontSize:11, color:'var(--ink-soft)', fontWeight:600 }}>
+                <span style={{ width:12, height:12, background:c, border:'1.5px solid var(--line)', display:'block' }} />
+                {label}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Settled-pick history (read-only) */}
+        <div className="heavy" style={{ fontSize:11, letterSpacing:'.09em', color:'var(--muted)', marginBottom:10 }}>
+          📋 PICK HISTORY
+        </div>
+        <div style={{ display:'grid', gap:8 }}>
+          {history.length === 0 && (
+            <EmptyState title="NO RESULTS YET" sub="This player has no settled predictions yet." emoji="📋" />
+          )}
+          {history.map(({ m, p }) => {
+            const pts = WC.pointsFor(p, m);
+            const accent = pts >= 3 ? '#2CB82A' : pts >= 1 ? '#FFC800' : 'var(--chip)';
+            return (
+              <div key={m.id} className="bd" style={{ background:'var(--panel)', padding:'10px 13px',
+                display:'flex', alignItems:'center', gap:10, borderWidth:2, borderLeft:`5px solid ${accent}` }}>
+                <Flag code={WC.teams[m.teamA]?.code} size={26} />
+                <span className="mono" style={{ fontSize:13, fontWeight:800, color:'var(--ink)' }}>
+                  {m.scoreA}–{m.scoreB}
+                </span>
+                <Flag code={WC.teams[m.teamB]?.code} size={26} />
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div className="heavy" style={{ fontSize:11, color:'var(--ink)',
+                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                    {m.teamA} v {m.teamB}
+                  </div>
+                  <div className="mono" style={{ fontSize:10, color:'var(--muted)' }}>
+                    pick: {p.a}–{p.b}
+                  </div>
+                </div>
+                <PointsChip pts={pts} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* =================== PROFILE =================== */
 function Profile({ predictions, onOpen, matches }) {
   const matchData = matches && matches.length > 0 ? matches : WC.matches;
@@ -307,6 +476,17 @@ function Profile({ predictions, onOpen, matches }) {
   const [showTeamPicker, setShowTeamPicker] = useS2(false);
   const [localFavTeam, setLocalFavTeam] = useS2((WC.me && WC.me.favTeam) || 'Argentina');
   useE2(() => { const t = setTimeout(() => setMounted(true), 80); return () => clearTimeout(t); }, []);
+
+  // Remember scroll position so opening a match from history and pressing Back
+  // returns to the same spot instead of the top.
+  const profileScrollRef = useR2(null);
+  useE2(() => {
+    const el = profileScrollRef.current; if (!el) return;
+    el.scrollTop = (WC._scroll && WC._scroll.profile) || 0;
+    const onScroll = () => { (WC._scroll = WC._scroll || {}).profile = el.scrollTop; };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
 
   useE2(() => {
     if (!WC.me || !WC.me.uid) return;
@@ -382,7 +562,7 @@ function Profile({ predictions, onOpen, matches }) {
   ];
 
   return (
-    <div style={{ height:'100%', overflowY:'auto', position:'relative',
+    <div ref={profileScrollRef} style={{ height:'100%', overflowY:'auto', position:'relative',
       background:'var(--bg)', containerType:'inline-size' }}>
       <RingsBackground intensity="subtle" seed={9} />
       <div style={{ position:'relative', padding:'18px 16px 30px' }}>

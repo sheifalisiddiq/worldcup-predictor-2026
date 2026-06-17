@@ -59,6 +59,9 @@ function Leaderboard({
   const [mounted, setMounted] = useS2(false);
   const [users, setUsers] = useS2([]);
   const [lbLoading, setLbLoading] = useS2(true);
+  const [picksByUid, setPicksByUid] = useS2({});
+  const [boardMatches, setBoardMatches] = useS2([]);
+  const [selectedUid, setSelectedUid] = useS2(null);
   useE2(() => {
     const t = setTimeout(() => setMounted(true), 100);
     return () => clearTimeout(t);
@@ -89,6 +92,10 @@ function Leaderboard({
         ms = ms || [];
         const [raw, byUid] = await Promise.all([fetchAllUsersREST(), fetchPredictionsByUidREST()]);
         if (cancelled) return;
+        // Keep the picks + matches so a tapped player's profile can be rendered
+        // with no extra network round-trip.
+        setPicksByUid(byUid);
+        setBoardMatches(ms);
         const list = raw.map(d => {
           const t = WC.computeUserTotals(byUid[d.uid] || {}, ms);
           return {
@@ -126,7 +133,33 @@ function Leaderboard({
   const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean); // 2nd, 1st, 3rd
   const podiumHeights = [88, 122, 72];
   const meUser = users.find(u => u.isMe);
+
+  // Restore the board's scroll position when returning from a player's profile
+  // (the board div unmounts while the detail is shown, then remounts at top).
+  const lbScrollRef = useR2(null);
+  useE2(() => {
+    const el = lbScrollRef.current;
+    if (!el) return;
+    el.scrollTop = WC._scroll && WC._scroll.leaderboard || 0;
+    const onScroll = () => {
+      (WC._scroll = WC._scroll || {}).leaderboard = el.scrollTop;
+    };
+    el.addEventListener('scroll', onScroll, {
+      passive: true
+    });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [selectedUid]);
+  if (selectedUid) {
+    const player = users.find(u => u.uid === selectedUid);
+    if (player) return /*#__PURE__*/React.createElement(PlayerDetail, {
+      player: player,
+      picks: picksByUid[selectedUid] || {},
+      matches: boardMatches,
+      onBack: () => setSelectedUid(null)
+    });
+  }
   return /*#__PURE__*/React.createElement("div", {
+    ref: lbScrollRef,
     style: {
       height: '100%',
       overflowY: 'auto',
@@ -146,10 +179,12 @@ function Leaderboard({
     kicker: "GLOBAL TABLE \xB7 LIVE",
     title: "LEADERBOARD"
   }), meUser && /*#__PURE__*/React.createElement("div", {
+    onClick: () => setSelectedUid(meUser.uid),
     style: {
       display: 'flex',
       alignItems: 'center',
       gap: 14,
+      cursor: 'pointer',
       background: '#FFC800',
       color: '#000',
       padding: '10px 16px',
@@ -240,12 +275,14 @@ function Leaderboard({
     const isFirst = realRank === 1;
     return /*#__PURE__*/React.createElement("div", {
       key: u.uid,
+      onClick: () => setSelectedUid(u.uid),
       style: {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         flex: 1,
         maxWidth: 130,
+        cursor: 'pointer',
         opacity: mounted ? 1 : 0,
         transform: mounted ? 'none' : 'translateY(24px)',
         transition: `opacity .45s ${colIdx * .12}s, transform .45s ${colIdx * .12}s`
@@ -373,18 +410,21 @@ function Leaderboard({
     key: u.uid,
     u: u,
     index: i,
-    mounted: mounted
+    mounted: mounted,
+    onSelect: setSelectedUid
   }))))));
 }
 function LeaderRow({
   u,
   index,
-  mounted
+  mounted,
+  onSelect
 }) {
   const me = u.isMe;
   const [hover, setHover] = useS2(false);
   return /*#__PURE__*/React.createElement("div", {
     className: "bd",
+    onClick: () => onSelect && onSelect(u.uid),
     onMouseEnter: () => setHover(true),
     onMouseLeave: () => setHover(false),
     style: {
@@ -392,6 +432,7 @@ function LeaderRow({
       alignItems: 'center',
       gap: 12,
       padding: '9px 13px',
+      cursor: 'pointer',
       background: me ? '#FFC800' : 'var(--panel)',
       borderWidth: me ? 3 : 2,
       boxShadow: me ? '4px 4px 0 0 #000' : hover ? '3px 3px 0 0 var(--shadow)' : 'none',
@@ -483,6 +524,364 @@ function LeaderRow({
   }, "PTS")));
 }
 
+/* =================== PLAYER DETAIL (read-only profile of any player) =================== */
+function PlayerDetail({
+  player,
+  picks,
+  matches,
+  onBack
+}) {
+  const t = WC.computeUserTotals(picks, matches);
+  const acc = t.played ? Math.round((t.exact + t.result) / t.played * 100) : 0;
+  const missed = Math.max(0, t.played - t.exact - t.result);
+
+  // Only settled (finished) matches are shown — a player's upcoming picks stay
+  // private so nobody can copy them before kickoff.
+  const history = Object.entries(picks).map(([id, p]) => ({
+    m: matches.find(x => x.id === id),
+    p
+  })).filter(x => x.m && x.m.status === 'finished').sort((a, b) => new Date(b.m.kickoff) - new Date(a.m.kickoff));
+  const statCards = [{
+    label: 'TOTAL POINTS',
+    value: t.total,
+    color: '#E8192C',
+    emoji: '⭐'
+  }, {
+    label: 'ACCURACY',
+    value: acc + '%',
+    color: '#2CB82A',
+    emoji: '🎯'
+  }, {
+    label: 'EXACT SCORES',
+    value: t.exact,
+    color: '#C9A427',
+    emoji: '💎'
+  }, {
+    label: 'PREDICTIONS',
+    value: t.picks,
+    color: '#1144CC',
+    emoji: '📊'
+  }];
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: '100%',
+      overflowY: 'auto',
+      position: 'relative',
+      background: 'var(--bg)',
+      containerType: 'inline-size',
+      animation: 'screen-slide-right .25s'
+    }
+  }, /*#__PURE__*/React.createElement(RingsBackground, {
+    intensity: "subtle",
+    seed: 9
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'relative',
+      padding: '14px 16px 30px'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: onBack,
+    className: "heavy",
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 13,
+      color: 'var(--ink)',
+      letterSpacing: '.04em',
+      marginBottom: 14
+    }
+  }, "\u2190 BACK"), /*#__PURE__*/React.createElement("div", {
+    className: "bd hard-lg",
+    style: {
+      background: '#071A40',
+      padding: 18,
+      marginBottom: 16,
+      position: 'relative',
+      overflow: 'hidden'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "hatch",
+    style: {
+      position: 'absolute',
+      inset: 0,
+      pointerEvents: 'none'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "wc26-stripe",
+    style: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      width: '100%'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 14,
+      alignItems: 'center',
+      position: 'relative',
+      zIndex: 1,
+      marginTop: 8
+    }
+  }, player.photo ? /*#__PURE__*/React.createElement("img", {
+    src: player.photo,
+    alt: "",
+    style: {
+      width: 68,
+      height: 68,
+      objectFit: 'cover',
+      border: '3px solid #fff',
+      boxShadow: '4px 4px 0 0 #000',
+      display: 'block'
+    }
+  }) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 68,
+      height: 68,
+      background: 'rgba(255,255,255,.15)',
+      border: '3px solid #fff',
+      display: 'grid',
+      placeItems: 'center',
+      fontSize: 32
+    }
+  }, "\uD83D\uDC64"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0,
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "display",
+    style: {
+      fontSize: 26,
+      color: '#FDFCFA',
+      lineHeight: .9,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis'
+    }
+  }, player.displayName), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 7,
+      marginTop: 8,
+      background: 'rgba(255,255,255,.1)',
+      border: '2px solid rgba(255,255,255,.25)',
+      padding: '5px 10px'
+    }
+  }, /*#__PURE__*/React.createElement(Flag, {
+    code: player.favCode,
+    size: 20
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      fontSize: 11,
+      color: 'rgba(255,255,255,.85)',
+      fontWeight: 600
+    }
+  }, t.total, " pts"))), /*#__PURE__*/React.createElement("div", {
+    className: "bd",
+    style: {
+      background: '#C9A427',
+      color: '#000',
+      padding: '7px 11px',
+      textAlign: 'center',
+      boxShadow: '3px 3px 0 0 #000'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "mono",
+    style: {
+      fontSize: 9,
+      fontWeight: 800,
+      letterSpacing: '.09em'
+    }
+  }, "RANK"), /*#__PURE__*/React.createElement("div", {
+    className: "display",
+    style: {
+      fontSize: 26,
+      lineHeight: .82
+    }
+  }, "#", player.rank || '—')))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(2, 1fr)',
+      gap: 10,
+      marginBottom: 18
+    }
+  }, statCards.map(({
+    label,
+    value,
+    color,
+    emoji
+  }) => /*#__PURE__*/React.createElement("div", {
+    key: label,
+    className: "bd hard",
+    style: {
+      background: 'var(--panel)',
+      padding: '14px',
+      borderTop: `6px solid ${color}`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      marginBottom: 5
+    }
+  }, emoji), /*#__PURE__*/React.createElement("div", {
+    className: "display",
+    style: {
+      fontSize: 36,
+      color: 'var(--ink)',
+      lineHeight: .85
+    }
+  }, typeof value === 'number' ? /*#__PURE__*/React.createElement(AnimNum, {
+    value: value
+  }) : value), /*#__PURE__*/React.createElement("div", {
+    className: "heavy",
+    style: {
+      fontSize: 10,
+      letterSpacing: '.1em',
+      color: 'var(--muted)',
+      marginTop: 5
+    }
+  }, label)))), /*#__PURE__*/React.createElement("div", {
+    className: "bd",
+    style: {
+      background: 'var(--panel)',
+      padding: 14,
+      marginBottom: 18
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "heavy",
+    style: {
+      fontSize: 11,
+      letterSpacing: '.09em',
+      color: 'var(--muted)',
+      marginBottom: 8
+    }
+  }, "RESULTS BREAKDOWN \xB7 ", t.played, " SETTLED"), /*#__PURE__*/React.createElement("div", {
+    className: "bd",
+    style: {
+      display: 'flex',
+      borderWidth: 2,
+      height: 30,
+      overflow: 'hidden'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: (t.played ? t.exact / t.played * 100 : 0) + '%',
+      background: '#2CB82A',
+      transition: 'width 1s ease'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: (t.played ? t.result / t.played * 100 : 0) + '%',
+      background: '#FFC800',
+      transition: 'width 1s ease .1s'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      background: 'var(--chip)'
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 14,
+      marginTop: 8,
+      flexWrap: 'wrap'
+    }
+  }, [['#2CB82A', `${t.exact} exact`], ['#FFC800', `${t.result} result`], ['var(--chip)', `${missed} missed`]].map(([c, label]) => /*#__PURE__*/React.createElement("span", {
+    key: label,
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 11,
+      color: 'var(--ink-soft)',
+      fontWeight: 600
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 12,
+      height: 12,
+      background: c,
+      border: '1.5px solid var(--line)',
+      display: 'block'
+    }
+  }), label)))), /*#__PURE__*/React.createElement("div", {
+    className: "heavy",
+    style: {
+      fontSize: 11,
+      letterSpacing: '.09em',
+      color: 'var(--muted)',
+      marginBottom: 10
+    }
+  }, "\uD83D\uDCCB PICK HISTORY"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gap: 8
+    }
+  }, history.length === 0 && /*#__PURE__*/React.createElement(EmptyState, {
+    title: "NO RESULTS YET",
+    sub: "This player has no settled predictions yet.",
+    emoji: "\uD83D\uDCCB"
+  }), history.map(({
+    m,
+    p
+  }) => {
+    const pts = WC.pointsFor(p, m);
+    const accent = pts >= 3 ? '#2CB82A' : pts >= 1 ? '#FFC800' : 'var(--chip)';
+    return /*#__PURE__*/React.createElement("div", {
+      key: m.id,
+      className: "bd",
+      style: {
+        background: 'var(--panel)',
+        padding: '10px 13px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        borderWidth: 2,
+        borderLeft: `5px solid ${accent}`
+      }
+    }, /*#__PURE__*/React.createElement(Flag, {
+      code: WC.teams[m.teamA]?.code,
+      size: 26
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "mono",
+      style: {
+        fontSize: 13,
+        fontWeight: 800,
+        color: 'var(--ink)'
+      }
+    }, m.scoreA, "\u2013", m.scoreB), /*#__PURE__*/React.createElement(Flag, {
+      code: WC.teams[m.teamB]?.code,
+      size: 26
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "heavy",
+      style: {
+        fontSize: 11,
+        color: 'var(--ink)',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis'
+      }
+    }, m.teamA, " v ", m.teamB), /*#__PURE__*/React.createElement("div", {
+      className: "mono",
+      style: {
+        fontSize: 10,
+        color: 'var(--muted)'
+      }
+    }, "pick: ", p.a, "\u2013", p.b)), /*#__PURE__*/React.createElement(PointsChip, {
+      pts: pts
+    }));
+  }))));
+}
+
 /* =================== PROFILE =================== */
 function Profile({
   predictions,
@@ -498,6 +897,22 @@ function Profile({
   useE2(() => {
     const t = setTimeout(() => setMounted(true), 80);
     return () => clearTimeout(t);
+  }, []);
+
+  // Remember scroll position so opening a match from history and pressing Back
+  // returns to the same spot instead of the top.
+  const profileScrollRef = useR2(null);
+  useE2(() => {
+    const el = profileScrollRef.current;
+    if (!el) return;
+    el.scrollTop = WC._scroll && WC._scroll.profile || 0;
+    const onScroll = () => {
+      (WC._scroll = WC._scroll || {}).profile = el.scrollTop;
+    };
+    el.addEventListener('scroll', onScroll, {
+      passive: true
+    });
+    return () => el.removeEventListener('scroll', onScroll);
   }, []);
   useE2(() => {
     if (!WC.me || !WC.me.uid) return;
@@ -590,6 +1005,7 @@ function Profile({
     emoji: '📊'
   }];
   return /*#__PURE__*/React.createElement("div", {
+    ref: profileScrollRef,
     style: {
       height: '100%',
       overflowY: 'auto',

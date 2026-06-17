@@ -219,6 +219,18 @@ function Matches({ predictions, onOpen, loading, matches }) {
   const [loaded, setLoaded] = useS1(!loading);
   useE1(() => { if (loading) { const t = setTimeout(() => setLoaded(true), 700); return () => clearTimeout(t); } }, [loading]);
 
+  // Remember the feed's scroll position. Opening a match unmounts this feed and
+  // pressing Back remounts it — without this it would snap to the top every
+  // time, forcing the user to scroll down again after each pick.
+  const feedRef = useR1(null);
+  useE1(() => {
+    const el = feedRef.current; if (!el) return;
+    el.scrollTop = (WC._scroll && WC._scroll.matches) || 0;
+    const onScroll = () => { (WC._scroll = WC._scroll || {}).matches = el.scrollTop; };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
   const list = useM1(() => {
     let ms = matchData.filter((m) => m.stage === stage);
     if (stage === 'Group Stage' && groupFilter !== 'All') ms = ms.filter((m) => m.group === groupFilter);
@@ -244,7 +256,7 @@ function Matches({ predictions, onOpen, loading, matches }) {
   const liveMatches = matchData.filter(m => m.status === 'live');
 
   return (
-    <div style={{ height:'100%', overflowY:'auto', position:'relative',
+    <div ref={feedRef} style={{ height:'100%', overflowY:'auto', position:'relative',
       background:'var(--bg)', containerType:'inline-size' }}>
       <RingsBackground intensity="subtle" seed={3} />
       <div style={{ position:'relative', padding:'18px 16px 30px' }}>
