@@ -1,4 +1,4 @@
-const CACHE = 'wc26-v22';
+const CACHE = 'wc26-v23';
 const PRECACHE = ['/', '/data.js', '/firebase-config.js',
   '/dist/vendor/react.production.min.js', '/dist/vendor/react-dom.production.min.js',
   '/dist/vendor/firebase-app-compat.js', '/dist/vendor/firebase-auth-compat.js', '/dist/vendor/firebase-database-compat.js',
