@@ -35,6 +35,27 @@ export default async function handler(req, res) {
   if (missing.length) { res.status(500).json({ error: 'missing env', missing }); return; }
 
   try {
+    // Test mode: GET /api/remind?key=…&test=1 sends a one-off "it works" push to
+    // every enabled device, bypassing the match/prediction logic. For verifying
+    // delivery before a real match window. Safe — gated by CRON_SECRET.
+    if (req.query.test === '1') {
+      const users = await readJson(DB + '/users.json?auth=' + dbSecret);
+      const tokens = [];
+      Object.values(users || {}).forEach(u => {
+        if (u && u.fcmTokens) tokens.push(...Object.keys(u.fcmTokens));
+      });
+      if (!tokens.length) { res.json({ ok: true, test: true, tokens: 0, note: 'no one has enabled reminders yet' }); return; }
+      const at = await getAccessToken(clientEmail, privateKey);
+      const data = { title: '🔔 Test reminder', body: 'Reminders are working — you’ll get pinged before matches!', match: '' };
+      let sent = 0, pruned = 0;
+      await Promise.all(tokens.map(async tk => {
+        const r = await sendData(at, projectId, tk, data);
+        if (r.ok) sent++; else if (r.unregistered) pruned++;
+      }));
+      res.json({ ok: true, test: true, tokens: tokens.length, sent, pruned });
+      return;
+    }
+
     // 1) Upcoming fixtures (next ~6h, still scheduled, both teams known).
     const fr = await fetch('https://api.football-data.org/v4/competitions/WC/matches?season=2026',
       { headers: { 'X-Auth-Token': apiKey } });
