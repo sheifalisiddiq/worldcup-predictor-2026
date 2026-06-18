@@ -282,7 +282,8 @@ function LeaderRow({ u, index, mounted, onSelect }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        display:'flex', alignItems:'center', gap:12, padding:'9px 13px', cursor:'pointer',
+        display:'grid', gridTemplateColumns:'auto auto auto minmax(0,1fr) auto',
+        alignItems:'center', gap:12, padding:'9px 13px', cursor:'pointer',
         background: me ? '#FFC800' : 'var(--panel)',
         borderWidth: me ? 3 : 2,
         boxShadow: me ? '4px 4px 0 0 #000' : hover ? '3px 3px 0 0 var(--shadow)' : 'none',
@@ -301,7 +302,7 @@ function LeaderRow({ u, index, mounted, onSelect }) {
           display:'grid', placeItems:'center', fontSize:17 }}>👤</div>
       )}
       <Flag code={u.favCode} size={22} />
-      <div style={{ flex:1, minWidth:0 }}>
+      <div style={{ minWidth:0 }}>
         <div className="heavy" style={{ fontSize:14, color: me ? '#000' : 'var(--ink)',
           whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
           {u.displayName}

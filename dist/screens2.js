@@ -429,7 +429,8 @@ function LeaderRow({
     onMouseEnter: () => setHover(true),
     onMouseLeave: () => setHover(false),
     style: {
-      display: 'flex',
+      display: 'grid',
+      gridTemplateColumns: 'auto auto auto minmax(0,1fr) auto',
       alignItems: 'center',
       gap: 12,
       padding: '9px 13px',
@@ -475,7 +476,6 @@ function LeaderRow({
     size: 22
   }), /*#__PURE__*/React.createElement("div", {
     style: {
-      flex: 1,
       minWidth: 0
     }
   }, /*#__PURE__*/React.createElement("div", {
