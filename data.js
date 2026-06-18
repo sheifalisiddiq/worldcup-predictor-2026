@@ -31,6 +31,7 @@
   var scoring = {
     exactGroup: 3, outcomeGroup: 1,
     exactKnockout: 5, outcomeKnockout: 1,
+    referral: 3,
     describe: 'Exact score 3 pts · Right result 1 pt · Knockout exact 5 pts',
   };
 
@@ -51,7 +52,7 @@
   // Leaderboard derive scores from this — never from a stored counter — so the
   // two surfaces can never disagree, and totals self-heal from the raw picks.
   // preds: { matchId: { a, b } }  ·  matches: array of fixtures (WC.matches)
-  function computeUserTotals(preds, matches, matchdaySet) {
+  function computeUserTotals(preds, matches, matchdaySet, referralCount) {
     var byId = {};
     (matches || []).forEach(function(m) { byId[m.id] = m; });
     var total = 0, exact = 0, result = 0, played = 0, picks = 0, matchdayPts = 0;
@@ -80,8 +81,14 @@
     for (var i = 0; i < settled.length; i++) {
       if (settled[i].pts > 0) streak++; else break;
     }
+    // Referral bonus: +3 pts per friend invited. Folded into the same single
+    // source of truth so Profile and Leaderboard never disagree, and it self-
+    // heals from the raw /referrals records (never a stored counter).
+    var referralPts = scoring.referral * (referralCount || 0);
+    total += referralPts;
     return { total: total, exact: exact, result: result, played: played,
-             picks: picks, matchdayPts: matchdayPts, streak: streak };
+             picks: picks, matchdayPts: matchdayPts, streak: streak,
+             referrals: (referralCount || 0), referralPts: referralPts };
   }
 
   // The set of match ids belonging to the latest active "matchday" — used for the

@@ -18,6 +18,12 @@ const TAB_ORDER = TABS.map(t => t.id);
 
 const LS = { preds: 'wc26_preds_v2', theme: 'wc26_theme', matches: 'wc26_matches_v1' };
 
+// Referral capture. Read ?ref=<inviterUid> at module load so it survives the
+// Google sign-in popup/redirect, then credit the inviter once on the friend's
+// first sign-in (see onAuthStateChanged below).
+var REF_PARAM = null;
+try { REF_PARAM = new URLSearchParams(window.location.search).get('ref'); } catch (e) {}
+
 // Picks are cached per-user in localStorage so a failed/slow REST write or read
 // can never make a prediction silently vanish on reload. Keyed by uid so a
 // shared browser never leaks one account's picks into another.
@@ -124,6 +130,20 @@ function App() {
                 createdAt: { '.sv': 'timestamp' },
               }),
             });
+            // First sign-in via an invite link: credit the inviter +3 pts. Keyed
+            // by THIS new user's uid so each friend can only be referred once
+            // (idempotent — no double-credit). Self-referral is blocked here and
+            // in the DB rules. Wrapped so a referral failure never blocks sign-in.
+            if (REF_PARAM && REF_PARAM !== user.uid) {
+              try {
+                const rurl = await dbUrl('/referrals/' + user.uid + '.json');
+                await fetch(rurl, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ referrer: REF_PARAM, at: { '.sv': 'timestamp' } }),
+                });
+              } catch (e) { console.error('Referral write error:', e); }
+            }
           } else {
             WC.me.favTeam = data.favTeam || 'Argentina';
             setCurrentUser({ ...WC.me });
@@ -216,6 +236,16 @@ function App() {
       try { window.history.replaceState({}, '', window.location.pathname); } catch (e) {}
     }
   }, [signed, matchesReady]);
+
+  // Strip ?ref=<inviterUid> from the URL once signed in (the referral has been
+  // recorded in onAuthStateChanged). Keeps a plain refresh from re-processing it
+  // and hides the inviter's uid from the address bar.
+  useEffect(() => {
+    if (!signed) return;
+    let hasRef = false;
+    try { hasRef = new URLSearchParams(window.location.search).has('ref'); } catch (e) {}
+    if (hasRef) { try { window.history.replaceState({}, '', window.location.pathname); } catch (e) {} }
+  }, [signed]);
 
   useEffect(() => {
     function onKey(e) {

@@ -14,6 +14,12 @@
         ".write": "auth != null && (!data.exists() ? newData.child('uid').val() === auth.uid : data.child('uid').val() === auth.uid)"
       }
     },
+    "referrals": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid && !data.exists() && newData.child('referrer').isString() && newData.child('referrer').val() !== auth.uid"
+      }
+    },
     "_matches": {
       ".read": "auth != null",
       ".write": false

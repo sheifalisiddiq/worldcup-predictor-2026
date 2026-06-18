@@ -56,6 +56,29 @@ async function fetchMovementsREST() {
   return (await res.json()) || {};
 }
 
+/* Referral counts: read every /referrals row over REST and tally how many friends
+   each inviter brought in. Returns { inviterUid: count } so the scorer can award
+   +3 pts per friend (WC.computeUserTotals). Keyed-by-new-user records mean each
+   friend is counted at most once. Returns {} on any failure. */
+async function fetchReferralCountsREST() {
+  try {
+    const user = window.fbAuth && window.fbAuth.currentUser;
+    if (!user) return {};
+    const tok = await user.getIdToken();
+    const base = window.fbDb.ref().toString().replace(/\/+$/, '');
+    const res = await fetch(base + '/referrals.json?auth=' + encodeURIComponent(tok));
+    if (!res.ok) return {};
+    const data = await res.json();
+    const counts = {};
+    if (data) {
+      Object.values(data).forEach(r => {
+        if (r && r.referrer) counts[r.referrer] = (counts[r.referrer] || 0) + 1;
+      });
+    }
+    return counts;
+  } catch (e) { return {}; }
+}
+
 /* Ranking categories. Each re-sorts the same player list by a different metric so
    players who trail on overall points can still lead — and rank — somewhere.
    field = which value to sort/show · tiebreak = secondary sort · unit = row label. */
@@ -159,8 +182,9 @@ function Leaderboard({ matches }) {
         }
         ms = ms || [];
         const matchdaySet = WC.currentMatchdaySet(ms);
-        const [raw, byUid, moves] = await Promise.all([
-          fetchAllUsersREST(), fetchPredictionsByUidREST(), fetchMovementsREST()]);
+        const [raw, byUid, moves, refCounts] = await Promise.all([
+          fetchAllUsersREST(), fetchPredictionsByUidREST(), fetchMovementsREST(),
+          fetchReferralCountsREST()]);
         if (cancelled) return;
         // Keep the picks + matches so a tapped player's profile can be rendered
         // with no extra network round-trip.
@@ -170,7 +194,7 @@ function Leaderboard({ matches }) {
         // Map raw metrics for every player; sorting/ranking happens per-category in
         // a memo below so switching tabs is instant with no refetch.
         const list = raw.map(d => {
-          const t = WC.computeUserTotals(byUid[d.uid] || {}, ms, matchdaySet);
+          const t = WC.computeUserTotals(byUid[d.uid] || {}, ms, matchdaySet, refCounts[d.uid] || 0);
           return {
             uid:         d.uid,
             displayName: d.displayName || 'Player',
@@ -693,6 +717,7 @@ function Profile({ predictions, onOpen, matches }) {
   const [tab, setTab] = useS2('history');
   const [mounted, setMounted] = useS2(false);
   const [userRank, setUserRank] = useS2(null);
+  const [refCounts, setRefCounts] = useS2({});
   const [showTeamPicker, setShowTeamPicker] = useS2(false);
   const [localFavTeam, setLocalFavTeam] = useS2((WC.me && WC.me.favTeam) || 'Argentina');
   useE2(() => { const t = setTimeout(() => setMounted(true), 80); return () => clearTimeout(t); }, []);
@@ -714,13 +739,18 @@ function Profile({ predictions, onOpen, matches }) {
     // user's points from their raw picks (same source as the Leaderboard) so
     // the rank shown here never disagrees with the board.
     let cancelled = false;
-    Promise.all([fetchAllUsersREST(), fetchPredictionsByUidREST()]).then(([raw, byUid]) => {
+    // Include referral counts so both my points and everyone else's reflect the
+    // +3-per-friend bonus — otherwise the rank shown here would disagree with the
+    // Leaderboard (which already applies it). Stash counts for the stats memo too.
+    Promise.all([fetchAllUsersREST(), fetchPredictionsByUidREST(), fetchReferralCountsREST()])
+      .then(([raw, byUid, counts]) => {
       if (cancelled) return;
+      setRefCounts(counts || {});
       const ms = matchData;
-      const myPts = WC.computeUserTotals(byUid[WC.me.uid] || {}, ms).total;
+      const myPts = WC.computeUserTotals(byUid[WC.me.uid] || {}, ms, null, counts[WC.me.uid] || 0).total;
       let better = 0;
       raw.forEach(u => {
-        if (WC.computeUserTotals(byUid[u.uid] || {}, ms).total > myPts) better++;
+        if (WC.computeUserTotals(byUid[u.uid] || {}, ms, null, counts[u.uid] || 0).total > myPts) better++;
       });
       setUserRank(better + 1);
     }).catch(() => {});
@@ -730,10 +760,12 @@ function Profile({ predictions, onOpen, matches }) {
   const stats = useM2(() => {
     // Derive every number from the shared scorer so the Profile total always
     // matches the Leaderboard (both call WC.computeUserTotals on raw picks).
-    const t = WC.computeUserTotals(predictions, matchData);
+    // refCounts loads async; until then own bonus is 0 and self-heals on arrival.
+    const myRefs = (WC.me && refCounts[WC.me.uid]) || 0;
+    const t = WC.computeUserTotals(predictions, matchData, null, myRefs);
     const acc = t.played ? Math.round(((t.exact + t.result) / t.played) * 100) : 0;
     return { ...t, acc };
-  }, [predictions, matchData]);
+  }, [predictions, matchData, refCounts]);
 
   const history = useM2(() => {
     return Object.entries(predictions)
@@ -770,6 +802,44 @@ function Profile({ predictions, onOpen, matches }) {
       navigator.share({ title: 'My WC2026 Profile', text }).catch(() => {});
     } else {
       navigator.clipboard?.writeText(text).then(() => window.toast('Profile copied!', 'info'));
+    }
+  }
+
+  // Referral / invite. The link carries ?ref=<my uid>; when a friend signs in
+  // for the first time through it, app.jsx records the referral and I earn +3.
+  const WA_GROUP = 'https://chat.whatsapp.com/GnYbaL7MzkvJU3UBwo3t2C?s=cl&p=i&ilr=0';
+  const inviteUrl = ((WC.me && WC.me.uid)
+    ? (window.location.origin + window.location.pathname + '?ref=' + WC.me.uid)
+    : '');
+  const inviteMsg =
+    `⚽ Join me on the World Cup 2026 Predictor! Predict scores, climb the leaderboard.\n\n`
+    + `Tap my invite link (I get +3 pts): ${inviteUrl}\n\n`
+    + `📲 Join the WhatsApp group for daily updates and reminders: ${WA_GROUP}`;
+
+  function copyInvite() {
+    const done = () => window.toast('Invite + WhatsApp link copied!', 'success');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(inviteMsg).then(done).catch(() => fallbackCopy(inviteMsg, done));
+    } else {
+      fallbackCopy(inviteMsg, done);
+    }
+  }
+  function fallbackCopy(text, done) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      done();
+    } catch (e) { window.toast('Could not copy — long-press to copy the link', 'error'); }
+  }
+  function shareInvite() {
+    if (navigator.share) {
+      navigator.share({ title: 'WC2026 Predictor', text: inviteMsg }).catch(() => {});
+    } else {
+      copyInvite();
     }
   }
 
@@ -858,6 +928,56 @@ function Profile({ predictions, onOpen, matches }) {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Invite friends — unique referral link, +3 pts each. Copy bundles the
+            link + WhatsApp group link + join message in one paste. */}
+        <div className="bd hard-lg" style={{
+          background:'#2CB82A', padding:16, marginBottom:18,
+          position:'relative', overflow:'hidden',
+        }}>
+          <div className="hatch" style={{ position:'absolute', inset:0, pointerEvents:'none', opacity:.4 }} />
+          <div style={{ position:'relative', zIndex:1 }}>
+            <div className="display" style={{ fontSize:22, color:'#fff', lineHeight:.9 }}>
+              INVITE FRIENDS · +3 PTS EACH
+            </div>
+            <div className="heavy" style={{ fontSize:11, color:'rgba(255,255,255,.9)', marginTop:6, lineHeight:1.4 }}>
+              {stats.referrals > 0
+                ? `🎉 ${stats.referrals} friend${stats.referrals === 1 ? '' : 's'} joined · +${stats.referralPts} pts earned`
+                : 'Share your link — earn 3 points for every friend who joins.'}
+            </div>
+
+            {/* The unique link, shown read-only so the user sees what they share */}
+            <div className="mono" style={{
+              marginTop:10, padding:'9px 11px', background:'rgba(0,0,0,.22)',
+              border:'2px solid rgba(255,255,255,.4)', color:'#fff', fontSize:11,
+              fontWeight:600, wordBreak:'break-all',
+            }}>{inviteUrl || '…'}</div>
+
+            <div style={{ display:'flex', gap:8, marginTop:10, flexWrap:'wrap' }}>
+              <button onClick={copyInvite} className="heavy" style={{
+                flex:'1 1 120px', background:'#fff', color:'#000', border:'2px solid #000',
+                padding:'10px 12px', fontSize:12, letterSpacing:'.05em', cursor:'pointer',
+                boxShadow:'3px 3px 0 0 #000',
+              }}>📋 COPY LINK</button>
+              <a href={'https://wa.me/?text=' + encodeURIComponent(inviteMsg)}
+                target="_blank" rel="noopener noreferrer" className="heavy" style={{
+                flex:'1 1 120px', background:'#075E54', color:'#fff', border:'2px solid #000',
+                padding:'10px 12px', fontSize:12, letterSpacing:'.05em', textAlign:'center',
+                textDecoration:'none', boxShadow:'3px 3px 0 0 #000',
+              }}>WHATSAPP ↗</a>
+              {typeof navigator !== 'undefined' && navigator.share && (
+                <button onClick={shareInvite} className="heavy" style={{
+                  flex:'1 1 120px', background:'#071A40', color:'#fff', border:'2px solid #000',
+                  padding:'10px 12px', fontSize:12, letterSpacing:'.05em', cursor:'pointer',
+                  boxShadow:'3px 3px 0 0 #000',
+                }}>SHARE ↗</button>
+              )}
+            </div>
+            <div className="heavy" style={{ fontSize:10, color:'rgba(255,255,255,.85)', marginTop:8, lineHeight:1.4 }}>
+              Includes the WhatsApp group link for daily updates &amp; reminders.
+            </div>
+          </div>
         </div>
 
         {/* Badges */}
