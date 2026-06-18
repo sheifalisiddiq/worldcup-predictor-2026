@@ -66,24 +66,62 @@ const CATEGORIES = [
   { key:'streak',    tab:'🔥 STREAK',    field:'streak',     tiebreak:'points', unit:'🔥'    },
 ];
 
-/* Earned-achievement strip. Derived (WC.computeBadges) — nothing stored. */
-function BadgeStrip({ badges }) {
-  if (!badges || !badges.length) return null;
+/* Achievement strip. Derived from WC.BADGE_CATALOG — nothing stored. Tap a badge to
+   reveal what it is + how to earn it. With showLocked, also renders not-yet-earned
+   badges greyed out (own Profile) so the player sees what's left to chase. */
+function BadgeStrip({ metrics, rank, showLocked }) {
+  const [sel, setSel] = useS2(null);
+  const catalog = WC.BADGE_CATALOG || [];
+  const m = metrics || {};
+  const r = rank || 0;
+  const items = catalog
+    .map(b => ({ ...b, earned: b.test(m, r) }))
+    // Tiered 🎯 badges: hide the lower tier's locked card once the higher tier shows.
+    .filter(b => b.key !== 'sharpshooter' || !catalog.find(x => x.key === 'deadeye').test(m, r))
+    .filter(b => b.earned || showLocked);
+  if (!items.length) return null;
+  const selBadge = items.find(b => b.key === sel);
   return (
     <div className="bd hard" style={{ background:'var(--panel)', padding:14, marginBottom:18,
       borderTop:'6px solid #C9A427' }}>
       <div className="heavy" style={{ fontSize:11, letterSpacing:'.09em', color:'var(--muted)', marginBottom:10 }}>
-        🏅 BADGES
+        🏅 BADGES <span style={{ fontWeight:600, textTransform:'none', letterSpacing:0 }}>· tap for info</span>
       </div>
       <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-        {badges.map(b => (
-          <div key={b.label} className="bd" style={{ display:'inline-flex', alignItems:'center', gap:6,
-            background:'var(--chip)', borderWidth:2, padding:'6px 10px' }}>
-            <span style={{ fontSize:16, lineHeight:1 }}>{b.emoji}</span>
-            <span className="heavy" style={{ fontSize:11, color:'var(--ink)', letterSpacing:'.02em' }}>{b.label}</span>
-          </div>
-        ))}
+        {items.map(b => {
+          const on = b.key === sel;
+          return (
+            <button key={b.key} onClick={() => setSel(on ? null : b.key)} className="bd"
+              style={{ display:'inline-flex', alignItems:'center', gap:6, cursor:'pointer',
+                background: on ? '#FFC800' : 'var(--chip)', borderWidth:2, padding:'6px 10px',
+                boxShadow: on ? '3px 3px 0 0 #000' : 'none',
+                transform: on ? 'translate(-1px,-1px)' : 'none',
+                opacity: b.earned ? 1 : .42, filter: b.earned ? 'none' : 'grayscale(1)',
+                transition:'transform .12s, box-shadow .12s' }}>
+              <span style={{ fontSize:16, lineHeight:1 }}>{b.emoji}</span>
+              <span className="heavy" style={{ fontSize:11, color:'var(--ink)', letterSpacing:'.02em' }}>
+                {b.label}{!b.earned && ' 🔒'}
+              </span>
+            </button>
+          );
+        })}
       </div>
+      {selBadge && (
+        <div className="bd" style={{ background:'var(--bg)', borderWidth:2, padding:'10px 12px', marginTop:10,
+          display:'flex', gap:10, alignItems:'flex-start' }}>
+          <span style={{ fontSize:22, lineHeight:1 }}>{selBadge.emoji}</span>
+          <div style={{ minWidth:0 }}>
+            <div className="heavy" style={{ fontSize:12, color:'var(--ink)' }}>
+              {selBadge.label} {selBadge.earned
+                ? <span style={{ color:'#2CB82A', fontSize:10 }}>· EARNED ✓</span>
+                : <span style={{ color:'var(--muted)', fontSize:10 }}>· LOCKED</span>}
+            </div>
+            <div className="mono" style={{ fontSize:11, color:'var(--ink-soft)', marginTop:3, fontWeight:600 }}>
+              {selBadge.how}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -485,7 +523,7 @@ function PlayerDetail({ player, picks, matches, onBack }) {
         </div>
 
         {/* Badges */}
-        <BadgeStrip badges={WC.computeBadges(t, player.rank)} />
+        <BadgeStrip metrics={t} rank={player.rank} />
 
         {/* Stat grid */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:10, marginBottom:18 }}>
@@ -823,7 +861,7 @@ function Profile({ predictions, onOpen, matches }) {
         </div>
 
         {/* Badges */}
-        <BadgeStrip badges={WC.computeBadges(stats, userRank)} />
+        <BadgeStrip metrics={stats} rank={userRank} showLocked />
 
         {/* Match-reminder opt-in (hidden until push is configured) */}
         <ReminderCard />

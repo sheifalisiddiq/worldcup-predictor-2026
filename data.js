@@ -105,19 +105,37 @@
     return set;
   }
 
-  // Derived achievements — computed from a player's picks/metrics, never stored.
+  // Derived achievements — single catalog drives both "did you earn it" (test) and
+  // the "how to get it" description shown when a badge is tapped. Nothing is stored;
+  // earned state is recomputed from metrics. `test(metrics, rank)` -> bool.
+  // Sharpshooter/Deadeye are tiered (exact ranges) so only one shows at a time.
+  var BADGE_CATALOG = [
+    { key:'podium',      emoji:'🏆',  label:'Podium',
+      how:'Finish in the top 3 of the overall leaderboard.',
+      test:function(m, rank){ return rank >= 1 && rank <= 3; } },
+    { key:'deadeye',     emoji:'🎯',  label:'Deadeye',
+      how:'Nail 5 or more exact scorelines.',
+      test:function(m){ return (m.exact || 0) >= 5; } },
+    { key:'sharpshooter',emoji:'🎯',  label:'Sharpshooter',
+      how:'Predict your first exact scoreline.',
+      test:function(m){ return (m.exact || 0) >= 1 && (m.exact || 0) < 5; } },
+    { key:'onfire',      emoji:'🔥',  label:'On Fire',
+      how:'Score points in 3 matches in a row.',
+      test:function(m){ return (m.streak || 0) >= 3; } },
+    { key:'centurion',   emoji:'💯',  label:'Centurion',
+      how:'Reach 100 total points.',
+      test:function(m){ return (m.total || 0) >= 100; } },
+    { key:'veteran',     emoji:'🎟️', label:'Veteran',
+      how:'Predict 20 settled matches.',
+      test:function(m){ return (m.played || 0) >= 20; } },
+  ];
+
   // metrics: output of computeUserTotals · rank: overall rank (0/undefined if unknown).
-  // Returns ordered list of earned { emoji, label }.
+  // Returns ordered list of earned { key, emoji, label, how }.
   function computeBadges(metrics, rank) {
     var m = metrics || {};
-    var out = [];
-    if (rank && rank >= 1 && rank <= 3) out.push({ emoji: '🏆', label: 'Podium' });
-    if ((m.exact || 0) >= 5) out.push({ emoji: '🎯', label: 'Deadeye' });
-    else if ((m.exact || 0) >= 1) out.push({ emoji: '🎯', label: 'Sharpshooter' });
-    if ((m.streak || 0) >= 3) out.push({ emoji: '🔥', label: 'On Fire' });
-    if ((m.total || 0) >= 100) out.push({ emoji: '💯', label: 'Centurion' });
-    if ((m.played || 0) >= 20) out.push({ emoji: '🎟️', label: 'Veteran' });
-    return out;
+    var r = rank || 0;
+    return BADGE_CATALOG.filter(function(b){ return b.test(m, r); });
   }
 
   function calcGroupStandings(groupLetter) {
@@ -163,6 +181,7 @@
     computeUserTotals: computeUserTotals,
     currentMatchdaySet: currentMatchdaySet,
     computeBadges: computeBadges,
+    BADGE_CATALOG: BADGE_CATALOG,
     calcGroupStandings: calcGroupStandings,
     stages: ['Group Stage','Round of 32','Round of 16','Quarter-finals','Semi-finals','Third-place','Final'],
   };

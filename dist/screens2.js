@@ -93,11 +93,26 @@ const CATEGORIES = [{
   unit: '🔥'
 }];
 
-/* Earned-achievement strip. Derived (WC.computeBadges) — nothing stored. */
+/* Achievement strip. Derived from WC.BADGE_CATALOG — nothing stored. Tap a badge to
+   reveal what it is + how to earn it. With showLocked, also renders not-yet-earned
+   badges greyed out (own Profile) so the player sees what's left to chase. */
 function BadgeStrip({
-  badges
+  metrics,
+  rank,
+  showLocked
 }) {
-  if (!badges || !badges.length) return null;
+  const [sel, setSel] = useS2(null);
+  const catalog = WC.BADGE_CATALOG || [];
+  const m = metrics || {};
+  const r = rank || 0;
+  const items = catalog.map(b => ({
+    ...b,
+    earned: b.test(m, r)
+  }))
+  // Tiered 🎯 badges: hide the lower tier's locked card once the higher tier shows.
+  .filter(b => b.key !== 'sharpshooter' || !catalog.find(x => x.key === 'deadeye').test(m, r)).filter(b => b.earned || showLocked);
+  if (!items.length) return null;
+  const selBadge = items.find(b => b.key === sel);
   return /*#__PURE__*/React.createElement("div", {
     className: "bd hard",
     style: {
@@ -114,36 +129,96 @@ function BadgeStrip({
       color: 'var(--muted)',
       marginBottom: 10
     }
-  }, "\uD83C\uDFC5 BADGES"), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83C\uDFC5 BADGES ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 600,
+      textTransform: 'none',
+      letterSpacing: 0
+    }
+  }, "\xB7 tap for info")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 8,
       flexWrap: 'wrap'
     }
-  }, badges.map(b => /*#__PURE__*/React.createElement("div", {
-    key: b.label,
+  }, items.map(b => {
+    const on = b.key === sel;
+    return /*#__PURE__*/React.createElement("button", {
+      key: b.key,
+      onClick: () => setSel(on ? null : b.key),
+      className: "bd",
+      style: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        cursor: 'pointer',
+        background: on ? '#FFC800' : 'var(--chip)',
+        borderWidth: 2,
+        padding: '6px 10px',
+        boxShadow: on ? '3px 3px 0 0 #000' : 'none',
+        transform: on ? 'translate(-1px,-1px)' : 'none',
+        opacity: b.earned ? 1 : .42,
+        filter: b.earned ? 'none' : 'grayscale(1)',
+        transition: 'transform .12s, box-shadow .12s'
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 16,
+        lineHeight: 1
+      }
+    }, b.emoji), /*#__PURE__*/React.createElement("span", {
+      className: "heavy",
+      style: {
+        fontSize: 11,
+        color: 'var(--ink)',
+        letterSpacing: '.02em'
+      }
+    }, b.label, !b.earned && ' 🔒'));
+  })), selBadge && /*#__PURE__*/React.createElement("div", {
     className: "bd",
     style: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 6,
-      background: 'var(--chip)',
+      background: 'var(--bg)',
       borderWidth: 2,
-      padding: '6px 10px'
+      padding: '10px 12px',
+      marginTop: 10,
+      display: 'flex',
+      gap: 10,
+      alignItems: 'flex-start'
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 16,
+      fontSize: 22,
       lineHeight: 1
     }
-  }, b.emoji), /*#__PURE__*/React.createElement("span", {
+  }, selBadge.emoji), /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     className: "heavy",
     style: {
-      fontSize: 11,
-      color: 'var(--ink)',
-      letterSpacing: '.02em'
+      fontSize: 12,
+      color: 'var(--ink)'
     }
-  }, b.label)))));
+  }, selBadge.label, " ", selBadge.earned ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: '#2CB82A',
+      fontSize: 10
+    }
+  }, "\xB7 EARNED \u2713") : /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--muted)',
+      fontSize: 10
+    }
+  }, "\xB7 LOCKED")), /*#__PURE__*/React.createElement("div", {
+    className: "mono",
+    style: {
+      fontSize: 11,
+      color: 'var(--ink-soft)',
+      marginTop: 3,
+      fontWeight: 600
+    }
+  }, selBadge.how))));
 }
 
 /* =================== LEADERBOARD =================== */
@@ -862,7 +937,8 @@ function PlayerDetail({
       lineHeight: .82
     }
   }, "#", player.rank || '—')))), /*#__PURE__*/React.createElement(BadgeStrip, {
-    badges: WC.computeBadges(t, player.rank)
+    metrics: t,
+    rank: player.rank
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
@@ -1514,7 +1590,9 @@ function Profile({
       marginTop: 5
     }
   }, label)))), /*#__PURE__*/React.createElement(BadgeStrip, {
-    badges: WC.computeBadges(stats, userRank)
+    metrics: stats,
+    rank: userRank,
+    showLocked: true
   }), /*#__PURE__*/React.createElement(ReminderCard, null), /*#__PURE__*/React.createElement("div", {
     className: "bd",
     style: {
