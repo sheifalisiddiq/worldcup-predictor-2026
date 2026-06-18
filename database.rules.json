@@ -17,6 +17,14 @@
     "_matches": {
       ".read": "auth != null",
       ".write": false
+    },
+    "_standings": {
+      ".read": "auth != null",
+      ".write": false
+    },
+    "_movements": {
+      ".read": "auth != null",
+      ".write": false
     }
   }
 }

@@ -43,9 +43,56 @@ async function fetchPredictionsByUidREST() {
   return byUid;
 }
 
+/* Per-user rank movement vs the previous completed matchday, written server-side
+   by api/remind.js (recapPass) into /_movements. { uid: delta } where delta is
+   +n for climbing n places, -n for dropping. Empty until the first matchday. */
+async function fetchMovementsREST() {
+  const user = window.fbAuth && window.fbAuth.currentUser;
+  if (!user) return {};
+  const tok = await user.getIdToken();
+  const base = window.fbDb.ref().toString().replace(/\/+$/, '');
+  const res = await fetch(base + '/_movements.json?auth=' + encodeURIComponent(tok));
+  if (!res.ok) return {};
+  return (await res.json()) || {};
+}
+
+/* Ranking categories. Each re-sorts the same player list by a different metric so
+   players who trail on overall points can still lead — and rank — somewhere.
+   field = which value to sort/show · tiebreak = secondary sort · unit = row label. */
+const CATEGORIES = [
+  { key:'overall',   tab:'🏆 OVERALL',   field:'points',     tiebreak:'exact',  unit:'PTS'   },
+  { key:'bullseyes', tab:'🎯 BULLSEYES', field:'exact',      tiebreak:'points', unit:'EXACT' },
+  { key:'today',     tab:'⚡ TODAY',     field:'matchdayPts',tiebreak:'points', unit:'TODAY' },
+  { key:'streak',    tab:'🔥 STREAK',    field:'streak',     tiebreak:'points', unit:'🔥'    },
+];
+
+/* Earned-achievement strip. Derived (WC.computeBadges) — nothing stored. */
+function BadgeStrip({ badges }) {
+  if (!badges || !badges.length) return null;
+  return (
+    <div className="bd hard" style={{ background:'var(--panel)', padding:14, marginBottom:18,
+      borderTop:'6px solid #C9A427' }}>
+      <div className="heavy" style={{ fontSize:11, letterSpacing:'.09em', color:'var(--muted)', marginBottom:10 }}>
+        🏅 BADGES
+      </div>
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+        {badges.map(b => (
+          <div key={b.label} className="bd" style={{ display:'inline-flex', alignItems:'center', gap:6,
+            background:'var(--chip)', borderWidth:2, padding:'6px 10px' }}>
+            <span style={{ fontSize:16, lineHeight:1 }}>{b.emoji}</span>
+            <span className="heavy" style={{ fontSize:11, color:'var(--ink)', letterSpacing:'.02em' }}>{b.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* =================== LEADERBOARD =================== */
 function Leaderboard({ matches }) {
   const [scope, setScope] = useS2('Global');
+  const [cat, setCat] = useS2('overall');
+  const [movements, setMovements] = useS2({});
   const [mounted, setMounted] = useS2(false);
   const [users, setUsers] = useS2([]);
   const [lbLoading, setLbLoading] = useS2(true);
@@ -73,14 +120,19 @@ function Leaderboard({ matches }) {
           } catch (e) {}
         }
         ms = ms || [];
-        const [raw, byUid] = await Promise.all([fetchAllUsersREST(), fetchPredictionsByUidREST()]);
+        const matchdaySet = WC.currentMatchdaySet(ms);
+        const [raw, byUid, moves] = await Promise.all([
+          fetchAllUsersREST(), fetchPredictionsByUidREST(), fetchMovementsREST()]);
         if (cancelled) return;
         // Keep the picks + matches so a tapped player's profile can be rendered
         // with no extra network round-trip.
         setPicksByUid(byUid);
         setBoardMatches(ms);
+        setMovements(moves || {});
+        // Map raw metrics for every player; sorting/ranking happens per-category in
+        // a memo below so switching tabs is instant with no refetch.
         const list = raw.map(d => {
-          const t = WC.computeUserTotals(byUid[d.uid] || {}, ms);
+          const t = WC.computeUserTotals(byUid[d.uid] || {}, ms, matchdaySet);
           return {
             uid:         d.uid,
             displayName: d.displayName || 'Player',
@@ -89,12 +141,12 @@ function Leaderboard({ matches }) {
             points:      t.total,
             exact:       t.exact,
             played:      t.played,
+            matchdayPts: t.matchdayPts,
+            streak:      t.streak,
             isMe:        d.uid === (WC.me && WC.me.uid),
           };
         });
-        list.sort((a, b) => b.points - a.points || b.exact - a.exact);
-        list.forEach((u, i) => { u.rank = i + 1; });
-        setUsers(list.slice(0, 100));
+        setUsers(list);
         setLbLoading(false);
       } catch (err) {
         if (cancelled) return;
@@ -107,12 +159,22 @@ function Leaderboard({ matches }) {
     return () => { cancelled = true; clearInterval(timer); };
   }, [matches]);
 
-  const top3 = users.slice(0, 3);
-  const rest = users.slice(3);
+  const catCfg = CATEGORIES.find(c => c.key === cat) || CATEGORIES[0];
+  // Re-sort + re-rank for the selected category. Players who trail overall can
+  // top a different board (Today/Bullseyes/Streak) and get their own rank #1.
+  const ranked = useM2(() => {
+    const list = users.slice().sort((a, b) =>
+      (b[catCfg.field] - a[catCfg.field]) || (b[catCfg.tiebreak] - a[catCfg.tiebreak]) || (b.points - a.points));
+    list.forEach((u, i) => { u.rank = i + 1; });
+    return list.slice(0, 100);
+  }, [users, cat]);
+
+  const top3 = ranked.slice(0, 3);
+  const rest = ranked.slice(3);
   const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean); // 2nd, 1st, 3rd
   const podiumHeights = [88, 122, 72];
 
-  const meUser = users.find(u => u.isMe);
+  const meUser = ranked.find(u => u.isMe);
 
   // Restore the board's scroll position when returning from a player's profile
   // (the board div unmounts while the detail is shown, then remounts at top).
@@ -126,7 +188,7 @@ function Leaderboard({ matches }) {
   }, [selectedUid]);
 
   if (selectedUid) {
-    const player = users.find(u => u.uid === selectedUid);
+    const player = ranked.find(u => u.uid === selectedUid);
     if (player) return (
       <PlayerDetail player={player} picks={picksByUid[selectedUid] || {}}
         matches={boardMatches} onBack={() => setSelectedUid(null)} />
@@ -152,9 +214,11 @@ function Leaderboard({ matches }) {
               #{meUser.rank}
             </div>
             <div style={{ flex:1 }}>
-              <div className="heavy" style={{ fontSize:13, letterSpacing:'.06em' }}>YOUR CURRENT RANK</div>
+              <div className="heavy" style={{ fontSize:13, letterSpacing:'.06em' }}>
+                YOUR RANK · {catCfg.tab.replace(/^\S+\s/, '')}
+              </div>
               <div className="mono" style={{ fontSize:11, fontWeight:700, marginTop:2 }}>
-                {meUser.points} pts · {meUser.exact} exact
+                {meUser[catCfg.field]} {catCfg.unit} · {meUser.points} pts overall
               </div>
             </div>
           </div>
@@ -176,6 +240,26 @@ function Leaderboard({ matches }) {
             );
           })}
         </div>
+
+        {/* Category pills — each is a different ranking so more players can lead */}
+        {scope === 'Global' && (
+          <div style={{ display:'flex', gap:7, marginBottom:18, flexWrap:'wrap' }}>
+            {CATEGORIES.map(c => {
+              const on = c.key === cat;
+              return (
+                <button key={c.key} onClick={() => setCat(c.key)} className="heavy"
+                  style={{ padding:'7px 12px', fontSize:11, letterSpacing:'.04em',
+                    border:'2.5px solid #000',
+                    boxShadow: on ? '3px 3px 0 0 #000' : 'none',
+                    transform: on ? 'translate(-1px,-1px)' : 'none',
+                    background: on ? '#FFC800' : 'var(--panel)',
+                    color: on ? '#000' : 'var(--ink)',
+                    transition:'background .12s, transform .12s, box-shadow .12s',
+                  }}>{c.tab}</button>
+              );
+            })}
+          </div>
+        )}
 
         {scope === 'Friends' ? (
           <EmptyState title="NO FRIENDS YET" sub="Share your invite link to start a private league." emoji="🤝" />
@@ -252,10 +336,10 @@ function Leaderboard({ matches }) {
                       <div className="hatch" style={{ position:'absolute', inset:0, pointerEvents:'none' }} />
                       <div className="mono" style={{ fontSize:18, fontWeight:800,
                         color:'#fff', position:'relative', zIndex:1 }}>
-                        <AnimNum value={u.points} />
+                        {cat === 'streak' && u[catCfg.field] > 0 ? '🔥' : ''}<AnimNum value={u[catCfg.field]} />
                       </div>
                       <div className="mono" style={{ fontSize:9, fontWeight:700,
-                        color:'rgba(255,255,255,.6)', letterSpacing:'.1em', position:'relative', zIndex:1 }}>PTS</div>
+                        color:'rgba(255,255,255,.6)', letterSpacing:'.1em', position:'relative', zIndex:1 }}>{catCfg.unit}</div>
                     </div>
                   </div>
                 );
@@ -264,7 +348,9 @@ function Leaderboard({ matches }) {
 
             {/* Rest of list */}
             <div style={{ display:'grid', gap:6 }}>
-              {rest.map((u, i) => <LeaderRow key={u.uid} u={u} index={i} mounted={mounted} onSelect={setSelectedUid} />)}
+              {rest.map((u, i) => <LeaderRow key={u.uid} u={u} index={i} mounted={mounted}
+                onSelect={setSelectedUid} catCfg={catCfg}
+                move={cat === 'overall' ? movements[u.uid] : undefined} />)}
             </div>
           </>
         )}
@@ -273,9 +359,11 @@ function Leaderboard({ matches }) {
   );
 }
 
-function LeaderRow({ u, index, mounted, onSelect }) {
+function LeaderRow({ u, index, mounted, onSelect, catCfg, move }) {
   const me = u.isMe;
   const [hover, setHover] = useS2(false);
+  const cfg = catCfg || CATEGORIES[0];
+  const value = u[cfg.field];
   return (
     <div className="bd"
       onClick={() => onSelect && onSelect(u.uid)}
@@ -292,8 +380,16 @@ function LeaderRow({ u, index, mounted, onSelect }) {
         opacity: mounted ? 1 : 0,
         borderLeft: `4px solid ${me ? '#E8192C' : u.rank <= 3 ? MEDAL[u.rank-1] : 'var(--hair)'}`,
       }}>
-      <div className="mono" style={{ width:28, textAlign:'center', fontSize:15, fontWeight:800,
-        color: me ? '#000' : u.rank <= 3 ? '#C9A427' : 'var(--muted)' }}>{u.rank}</div>
+      <div style={{ width:28, textAlign:'center' }}>
+        <div className="mono" style={{ fontSize:15, fontWeight:800,
+          color: me ? '#000' : u.rank <= 3 ? '#C9A427' : 'var(--muted)' }}>{u.rank}</div>
+        {move != null && move !== 0 && (
+          <div className="mono" style={{ fontSize:9, fontWeight:800, lineHeight:1, marginTop:1,
+            color: me ? '#000' : move > 0 ? '#2CB82A' : '#E8192C' }}>
+            {move > 0 ? '▲' : '▼'}{Math.abs(move)}
+          </div>
+        )}
+      </div>
       {u.photo ? (
         <img src={u.photo} alt="" style={{ width:36, height:36, objectFit:'cover',
           border:'2px solid var(--line)' }} />
@@ -313,14 +409,15 @@ function LeaderRow({ u, index, mounted, onSelect }) {
         </div>
         <div className="mono" style={{ fontSize:10, color: me ? 'rgba(0,0,0,.55)' : 'var(--muted)', fontWeight:600 }}>
           {u.exact} exact · {u.played} played
+          {u.streak >= 2 && <span style={{ marginLeft:6, color:'#E8192C', fontWeight:800 }}>🔥{u.streak}</span>}
         </div>
       </div>
       <div style={{ textAlign:'right' }}>
         <div className="mono" style={{ fontSize:20, fontWeight:800, color: me ? '#000' : 'var(--ink)' }}>
-          {u.points}
+          {cfg.key === 'streak' && value > 0 ? '🔥' : ''}{value}
         </div>
         <div className="mono" style={{ fontSize:9, fontWeight:600,
-          color: me ? 'rgba(0,0,0,.45)' : 'var(--muted)', letterSpacing:'.08em' }}>PTS</div>
+          color: me ? 'rgba(0,0,0,.45)' : 'var(--muted)', letterSpacing:'.08em' }}>{cfg.unit}</div>
       </div>
     </div>
   );
@@ -375,7 +472,7 @@ function PlayerDetail({ player, picks, matches, onBack }) {
                 background:'rgba(255,255,255,.1)', border:'2px solid rgba(255,255,255,.25)', padding:'5px 10px' }}>
                 <Flag code={player.favCode} size={20} />
                 <span className="mono" style={{ fontSize:11, color:'rgba(255,255,255,.85)', fontWeight:600 }}>
-                  {t.total} pts
+                  {t.total} pts{t.streak >= 2 ? ' · 🔥' + t.streak : ''}
                 </span>
               </div>
             </div>
@@ -386,6 +483,9 @@ function PlayerDetail({ player, picks, matches, onBack }) {
             </div>
           </div>
         </div>
+
+        {/* Badges */}
+        <BadgeStrip badges={WC.computeBadges(t, player.rank)} />
 
         {/* Stat grid */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:10, marginBottom:18 }}>
@@ -679,6 +779,10 @@ function Profile({ predictions, onOpen, matches }) {
                 <span className="mono" style={{ fontSize:11, color:'rgba(255,255,255,.85)', fontWeight:600 }}>{favTeam}</span>
                 <span style={{ fontSize:9, color:'rgba(255,255,255,.5)', marginLeft:2 }}>✏️</span>
               </button>
+              {stats.streak >= 2 && (
+                <div className="mono" style={{ display:'inline-block', marginTop:7, marginLeft:8,
+                  fontSize:11, fontWeight:800, color:'#FFC800' }}>🔥 {stats.streak} in a row</div>
+              )}
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
               <div className="bd" style={{
@@ -717,6 +821,9 @@ function Profile({ predictions, onOpen, matches }) {
             </div>
           ))}
         </div>
+
+        {/* Badges */}
+        <BadgeStrip badges={WC.computeBadges(stats, userRank)} />
 
         {/* Match-reminder opt-in (hidden until push is configured) */}
         <ReminderCard />

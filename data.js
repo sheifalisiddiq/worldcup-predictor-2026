@@ -51,10 +51,13 @@
   // Leaderboard derive scores from this — never from a stored counter — so the
   // two surfaces can never disagree, and totals self-heal from the raw picks.
   // preds: { matchId: { a, b } }  ·  matches: array of fixtures (WC.matches)
-  function computeUserTotals(preds, matches) {
+  function computeUserTotals(preds, matches, matchdaySet) {
     var byId = {};
     (matches || []).forEach(function(m) { byId[m.id] = m; });
-    var total = 0, exact = 0, result = 0, played = 0, picks = 0;
+    var total = 0, exact = 0, result = 0, played = 0, picks = 0, matchdayPts = 0;
+    // Collect settled picks so we can also derive the current scoring streak,
+    // which needs the picks in chronological order.
+    var settled = [];
     Object.keys(preds || {}).forEach(function(id) {
       var p = preds[id];
       if (p && p.a != null && p.b != null) picks++;
@@ -66,9 +69,55 @@
         var exactThreshold = isKnockout(m.stage) ? scoring.exactKnockout : scoring.exactGroup;
         if (pts >= exactThreshold) exact++;
         else if (pts > 0) result++;
+        if (matchdaySet && matchdaySet.has && matchdaySet.has(m.id)) matchdayPts += pts;
+        settled.push({ kickoff: m.kickoff, pts: pts });
       }
     });
-    return { total: total, exact: exact, result: result, played: played, picks: picks };
+    // Current streak = consecutive most-recent settled picks that scored points.
+    // Walk newest→oldest, stop at the first miss.
+    settled.sort(function(a, b) { return new Date(b.kickoff) - new Date(a.kickoff); });
+    var streak = 0;
+    for (var i = 0; i < settled.length; i++) {
+      if (settled[i].pts > 0) streak++; else break;
+    }
+    return { total: total, exact: exact, result: result, played: played,
+             picks: picks, matchdayPts: matchdayPts, streak: streak };
+  }
+
+  // The set of match ids belonging to the latest active "matchday" — used for the
+  // Today/Matchday leaderboard. Groups fixtures by UTC calendar date of kickoff and
+  // returns the ids of the most recent date that has any finished or live match.
+  // Empty pre-tournament (nothing has kicked off yet).
+  function currentMatchdaySet(matches) {
+    var byDate = {}; // 'YYYY-MM-DD' -> [ids], plus a flag for any active match
+    var activeDates = {};
+    (matches || []).forEach(function(m) {
+      if (!m.kickoff) return;
+      var day = new Date(m.kickoff).toISOString().slice(0, 10);
+      (byDate[day] = byDate[day] || []).push(m.id);
+      if (m.status === 'finished' || m.status === 'live') activeDates[day] = true;
+    });
+    var days = Object.keys(activeDates).sort(); // ascending; last = latest active
+    var set = new Set();
+    if (days.length) {
+      (byDate[days[days.length - 1]] || []).forEach(function(id) { set.add(id); });
+    }
+    return set;
+  }
+
+  // Derived achievements — computed from a player's picks/metrics, never stored.
+  // metrics: output of computeUserTotals · rank: overall rank (0/undefined if unknown).
+  // Returns ordered list of earned { emoji, label }.
+  function computeBadges(metrics, rank) {
+    var m = metrics || {};
+    var out = [];
+    if (rank && rank >= 1 && rank <= 3) out.push({ emoji: '🏆', label: 'Podium' });
+    if ((m.exact || 0) >= 5) out.push({ emoji: '🎯', label: 'Deadeye' });
+    else if ((m.exact || 0) >= 1) out.push({ emoji: '🎯', label: 'Sharpshooter' });
+    if ((m.streak || 0) >= 3) out.push({ emoji: '🔥', label: 'On Fire' });
+    if ((m.total || 0) >= 100) out.push({ emoji: '💯', label: 'Centurion' });
+    if ((m.played || 0) >= 20) out.push({ emoji: '🎟️', label: 'Veteran' });
+    return out;
   }
 
   function calcGroupStandings(groupLetter) {
@@ -112,6 +161,8 @@
     isKnockout: isKnockout,
     pointsFor: pointsFor,
     computeUserTotals: computeUserTotals,
+    currentMatchdaySet: currentMatchdaySet,
+    computeBadges: computeBadges,
     calcGroupStandings: calcGroupStandings,
     stages: ['Group Stage','Round of 32','Round of 16','Quarter-finals','Semi-finals','Third-place','Final'],
   };

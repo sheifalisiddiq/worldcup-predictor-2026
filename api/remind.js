@@ -144,6 +144,10 @@ async function recapPass(ctx) {
   const rankMap = {};
   Object.entries(totals).sort((a, b) => b[1] - a[1]).forEach(([uid], i) => { rankMap[uid] = i + 1; });
 
+  // Ranks as of the previous completed matchday — used for movement arrows (client
+  // reads /_movements) and for the loss-aversion push copy below. delta > 0 = climbed.
+  const prevRanks = (await readJson(DB + '/_standings.json?auth=' + dbSecret)) || {};
+
   let sent = 0, pruned = 0; const summary = [];
   for (const m of todo) {
     const jobs = [];
@@ -151,9 +155,16 @@ async function recapPass(ctx) {
       if (String(p.matchId) !== String(m.id) || !uidTokens[p.uid]) return;
       const pts = pointsFor({ a: p.homeGoals, b: p.awayGoals }, m);
       const rank = rankMap[p.uid] || 0;
+      const prev = prevRanks[p.uid];
+      const delta = (prev != null && rank) ? (prev - rank) : 0;
+      let body;
+      if (pts <= 0) body = "No points this time — next one's yours 💪";
+      else if (delta > 0) body = '📈 You climbed to #' + rank + ' (▲' + delta + ')!';
+      else if (delta < 0) body = '⚠️ Someone passed you — now #' + rank + ' (▼' + Math.abs(delta) + ')';
+      else body = 'You scored +' + pts + ' — now #' + rank + '!';
       const data = {
         title: '⚽ ' + m.teamA + ' ' + m.scoreA + '–' + m.scoreB + ' ' + m.teamB,
-        body:  pts > 0 ? ('You scored +' + pts + ' — now #' + rank + '!') : "No points this time — next one's yours 💪",
+        body:  body,
         match: String(m.id),
       };
       uidTokens[p.uid].forEach(tk => jobs.push({ uid: p.uid, tk, data }));
@@ -163,6 +174,18 @@ async function recapPass(ctx) {
     await markFlag('/_recaps/' + m.id, r.sent, dbSecret);
     summary.push({ match: m.teamA + ' ' + m.scoreA + '–' + m.scoreB + ' ' + m.teamB, recipients: jobs.length, sent: r.sent });
   }
+
+  // Publish the new standings + per-user movement so the leaderboard can show ▲▼
+  // and the next matchday's recap can quote the delta. Only when a matchday was
+  // actually processed, so the snapshot represents "ranks at the last matchday".
+  const movements = {};
+  Object.keys(rankMap).forEach(uid => {
+    const prev = prevRanks[uid];
+    movements[uid] = (prev != null) ? (prev - rankMap[uid]) : 0;
+  });
+  await putJson('/_standings', rankMap, dbSecret);
+  await putJson('/_movements', movements, dbSecret);
+
   return { finished: finished.length, processed: todo.length, sent, pruned, summary };
 }
 
@@ -180,6 +203,13 @@ async function blast(jobs, accessToken, projectId, dbSecret) {
     }
   }));
   return { sent, pruned };
+}
+
+// Overwrite an RTDB node with an arbitrary JSON value (server-side, bypasses rules).
+async function putJson(path, value, dbSecret) {
+  await fetch(DB + path + '.json?auth=' + dbSecret,
+    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) }
+  ).catch(() => {});
 }
 
 async function markFlag(path, count, dbSecret) {
