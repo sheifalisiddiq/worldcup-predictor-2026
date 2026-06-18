@@ -1,11 +1,48 @@
 /* Screens part 1: Landing, Matches feed, Match detail */
 const { useState: useS1, useRef: useR1, useMemo: useM1, useEffect: useE1 } = React;
 
+/* True inside an embedded in-app browser (WhatsApp/Instagram/etc.). Google OAuth
+   refuses to run in these WebViews, so signInWithPopup fails and bounces the user
+   back to Landing. Invite links are tapped inside WhatsApp, so this hits nearly
+   every new user — Landing uses it to show "open in a real browser" guidance.
+   Keep the regex in sync with signIn() in app.jsx. */
+function isInAppBrowser() {
+  const ua = navigator.userAgent || '';
+  return /FBAN|FBAV|Instagram|Line|Twitter|WhatsApp|Snapchat|Pinterest|TikTok|MicroMessenger/i.test(ua);
+}
+
 /* =================== LANDING =================== */
 function Landing({ onSignIn }) {
   const scrollRef = useR1(null);
   const [signingIn, setSigningIn] = useS1(false);
+  const inApp = isInAppBrowser();
+  const isAndroid = /Android/i.test(navigator.userAgent || '');
   const flagCodes = ['ar','br','fr','es','gb-eng','pt','de','nl','mx','us','ca','jp','ma','co','uy','sn','ng','kr','be','hr','ch','dk','se','pl'];
+
+  function copyCurrentUrl() {
+    const url = window.location.href; // keeps ?ref= so the referral still credits
+    const done = () => window.toast('Link copied — paste in Chrome or Safari', 'success', 4000);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done).catch(() => fallbackCopyUrl(url, done));
+    } else {
+      fallbackCopyUrl(url, done);
+    }
+  }
+  function fallbackCopyUrl(text, done) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta); done();
+    } catch (e) { window.toast('Could not copy — long-press the address bar', 'error'); }
+  }
+  function openInChrome() {
+    // Android: hand the current URL (with ?ref) straight to Chrome via an intent.
+    const loc = window.location;
+    const intent = 'intent://' + loc.host + loc.pathname + loc.search +
+      '#Intent;scheme=https;package=com.android.chrome;end';
+    window.location.href = intent;
+  }
 
   function handleSignIn() {
     setSigningIn(true);
@@ -99,6 +136,39 @@ function Landing({ onSignIn }) {
           Climb the global table.{' '}
           <strong style={{ color:'#FFC800' }}>Beat the world.</strong>
         </p>
+
+        {/* In-app browser warning — Google OAuth can't run inside WhatsApp/Instagram
+            WebViews, so guide the user to a real browser. Copy keeps ?ref so the
+            referral still credits after they paste. */}
+        {inApp && (
+          <div className="bd hard-lg" style={{
+            background:'#FFC800', color:'#000', border:'3px solid #000',
+            boxShadow:'6px 6px 0 0 #000', padding:'14px 16px', maxWidth:420,
+            margin:'0 auto 18px', textAlign:'left', animation:'slideUp .5s .2s both',
+          }}>
+            <div className="display" style={{ fontSize:20, lineHeight:.95 }}>
+              ⚠️ OPEN IN YOUR BROWSER
+            </div>
+            <div className="heavy" style={{ fontSize:12, marginTop:6, lineHeight:1.4 }}>
+              Google blocks sign-in inside WhatsApp/Instagram. Copy this link and open it in
+              Chrome or Safari — or tap the ⋯ menu → “Open in browser”.
+            </div>
+            <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
+              <button onClick={copyCurrentUrl} className="heavy" style={{
+                flex:'1 1 130px', background:'#fff', color:'#000', border:'2px solid #000',
+                padding:'10px 12px', fontSize:12, letterSpacing:'.05em', cursor:'pointer',
+                boxShadow:'3px 3px 0 0 #000',
+              }}>📋 COPY LINK</button>
+              {isAndroid && (
+                <button onClick={openInChrome} className="heavy" style={{
+                  flex:'1 1 130px', background:'#071A40', color:'#fff', border:'2px solid #000',
+                  padding:'10px 12px', fontSize:12, letterSpacing:'.05em', cursor:'pointer',
+                  boxShadow:'3px 3px 0 0 #000',
+                }}>OPEN IN CHROME ↗</button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* CTA button */}
         <button onClick={handleSignIn} disabled={signingIn} className="heavy" style={{
