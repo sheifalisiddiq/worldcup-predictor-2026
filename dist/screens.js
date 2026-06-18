@@ -483,9 +483,15 @@ function Matches({
       const q = search.toLowerCase();
       ms = ms.filter(m => (m.teamA || '').toLowerCase().includes(q) || (m.teamB || '').toLowerCase().includes(q) || (m.city || '').toLowerCase().includes(q) || (m.venue || '').toLowerCase().includes(q));
     }
-    ms.sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff));
+    ms.sort((a, b) => {
+      const aNeedsPick = !isLocked(a) && !predictions[a.id];
+      const bNeedsPick = !isLocked(b) && !predictions[b.id];
+      if (aNeedsPick && !bNeedsPick) return -1;
+      if (!aNeedsPick && bNeedsPick) return 1;
+      return new Date(a.kickoff) - new Date(b.kickoff);
+    });
     return ms;
-  }, [stage, groupFilter, search, matchData]);
+  }, [stage, groupFilter, search, matchData, predictions]);
   const byDay = useM1(() => {
     const map = new Map();
     list.forEach(m => {
@@ -495,6 +501,7 @@ function Matches({
     });
     return [...map.entries()];
   }, [list]);
+  const firstPastIdx = byDay.findIndex(([, ms]) => ms.every(m => isLocked(m) || predictions[m.id]));
   const liveMatches = matchData.filter(m => m.status === 'live');
   return /*#__PURE__*/React.createElement("div", {
     ref: feedRef,
@@ -636,8 +643,36 @@ function Matches({
     style: {
       animation: 'fadeIn .2s'
     }
-  }, byDay.map(([day, ms]) => /*#__PURE__*/React.createElement("div", {
-    key: day,
+  }, byDay.map(([day, ms], idx) => /*#__PURE__*/React.createElement(React.Fragment, {
+    key: day
+  }, idx === firstPastIdx && firstPastIdx > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      margin: '8px 0 16px'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      height: 1,
+      background: 'var(--line)'
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      fontSize: 10,
+      color: 'var(--muted)',
+      fontWeight: 700,
+      letterSpacing: '.08em'
+    }
+  }, "PAST MATCHES"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      height: 1,
+      background: 'var(--line)'
+    }
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 18
     }
@@ -653,7 +688,7 @@ function Matches({
     m: m,
     prediction: predictions[m.id],
     onOpen: () => onOpen(m.id)
-  })))))), (!loading || loaded) && byDay.length === 0 && !search && /*#__PURE__*/React.createElement(EmptyState, {
+  }))))))), (!loading || loaded) && byDay.length === 0 && !search && /*#__PURE__*/React.createElement(EmptyState, {
     title: "NOTHING HERE YET",
     sub: "Fixtures for this stage are set once the bracket fills in."
   }), search && byDay.length === 0 && /*#__PURE__*/React.createElement(EmptyState, {

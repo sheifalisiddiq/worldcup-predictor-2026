@@ -309,9 +309,15 @@ function Matches({ predictions, onOpen, loading, matches }) {
       ms = ms.filter(m => (m.teamA||'').toLowerCase().includes(q) || (m.teamB||'').toLowerCase().includes(q) ||
         (m.city||'').toLowerCase().includes(q) || (m.venue||'').toLowerCase().includes(q));
     }
-    ms.sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff));
+    ms.sort((a, b) => {
+      const aNeedsPick = !isLocked(a) && !predictions[a.id];
+      const bNeedsPick = !isLocked(b) && !predictions[b.id];
+      if (aNeedsPick && !bNeedsPick) return -1;
+      if (!aNeedsPick && bNeedsPick) return 1;
+      return new Date(a.kickoff) - new Date(b.kickoff);
+    });
     return ms;
-  }, [stage, groupFilter, search, matchData]);
+  }, [stage, groupFilter, search, matchData, predictions]);
 
   const byDay = useM1(() => {
     const map = new Map();
@@ -322,6 +328,10 @@ function Matches({ predictions, onOpen, loading, matches }) {
     });
     return [...map.entries()];
   }, [list]);
+
+  const firstPastIdx = byDay.findIndex(([, ms]) =>
+    ms.every(m => isLocked(m) || predictions[m.id])
+  );
 
   const liveMatches = matchData.filter(m => m.status === 'live');
 
@@ -397,13 +407,22 @@ function Matches({ predictions, onOpen, loading, matches }) {
               <div style={{ display:'grid', gap:12 }}>{[0,1,2,3].map((i) => <Skeleton key={i} h={150} />)}</div>
             ) : (
               <div style={{ animation:'fadeIn .2s' }}>
-                {byDay.map(([day, ms]) => (
-                  <div key={day} style={{ marginBottom:18 }}>
-                    <DayHeading>{day.toUpperCase()}</DayHeading>
-                    <div style={{ display:'grid', gap:12, gridTemplateColumns:'repeat(auto-fill, minmax(290px, 1fr))', marginTop:8 }}>
-                      {ms.map((m) => <MatchCard key={m.id} m={m} prediction={predictions[m.id]} onOpen={() => onOpen(m.id)} />)}
+                {byDay.map(([day, ms], idx) => (
+                  <React.Fragment key={day}>
+                    {idx === firstPastIdx && firstPastIdx > 0 && (
+                      <div style={{ display:'flex', alignItems:'center', gap:10, margin:'8px 0 16px' }}>
+                        <div style={{ flex:1, height:1, background:'var(--line)' }} />
+                        <span className="mono" style={{ fontSize:10, color:'var(--muted)', fontWeight:700, letterSpacing:'.08em' }}>PAST MATCHES</span>
+                        <div style={{ flex:1, height:1, background:'var(--line)' }} />
+                      </div>
+                    )}
+                    <div style={{ marginBottom:18 }}>
+                      <DayHeading>{day.toUpperCase()}</DayHeading>
+                      <div style={{ display:'grid', gap:12, gridTemplateColumns:'repeat(auto-fill, minmax(290px, 1fr))', marginTop:8 }}>
+                        {ms.map((m) => <MatchCard key={m.id} m={m} prediction={predictions[m.id]} onOpen={() => onOpen(m.id)} />)}
+                      </div>
                     </div>
-                  </div>
+                  </React.Fragment>
                 ))}
               </div>
             )}
