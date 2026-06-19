@@ -44,7 +44,8 @@ async function fetchPredictionsByUidREST() {
       if (!p || p.uid == null || p.matchId == null) return;
       (byUid[p.uid] = byUid[p.uid] || {})[p.matchId] = {
         a: p.homeGoals,
-        b: p.awayGoals
+        b: p.awayGoals,
+        stake: p.stake || 0
       };
     });
   }
@@ -116,6 +117,12 @@ const CATEGORIES = [{
   field: 'streak',
   tiebreak: 'points',
   unit: '🔥'
+}, {
+  key: 'gambler',
+  tab: '💰 GAMBLER',
+  field: 'wagerNet',
+  tiebreak: 'points',
+  unit: 'NET'
 }];
 
 /* Achievement strip. Derived from WC.BADGE_CATALOG — nothing stored. Tap a badge to
@@ -309,6 +316,7 @@ function Leaderboard({
             played: t.played,
             matchdayPts: t.matchdayPts,
             streak: t.streak,
+            wagerNet: t.wagerNet || 0,
             isMe: d.uid === (WC.me && WC.me.uid)
           };
         });
@@ -1690,7 +1698,7 @@ function Profile({
       color: '#fff',
       lineHeight: .9
     }
-  }, "INVITE FRIENDS \xB7 +3 PTS EACH"), /*#__PURE__*/React.createElement("div", {
+  }, "INVITE FRIENDS \xB7 +2 PTS EACH"), /*#__PURE__*/React.createElement("div", {
     className: "heavy",
     style: {
       fontSize: 11,
@@ -1698,7 +1706,7 @@ function Profile({
       marginTop: 6,
       lineHeight: 1.4
     }
-  }, stats.referrals > 0 ? `🎉 ${stats.referrals} friend${stats.referrals === 1 ? '' : 's'} joined · +${stats.referralPts} pts earned` : 'Share your link — earn 3 points for every friend who joins.'), /*#__PURE__*/React.createElement("div", {
+  }, stats.referrals > 0 ? `🎉 ${stats.referrals} friend${stats.referrals === 1 ? '' : 's'} joined · +${stats.referralPts} pts earned` : 'Share your link — earn 2 points for every friend who joins.'), /*#__PURE__*/React.createElement("div", {
     className: "mono",
     style: {
       marginTop: 10,

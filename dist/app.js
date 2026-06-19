@@ -372,6 +372,7 @@ function App() {
           server[d.matchId] = {
             a: d.homeGoals,
             b: d.awayGoals,
+            stake: d.stake || 0,
             points: d.points,
             scored: d.scored
           };
@@ -417,6 +418,7 @@ function App() {
             matchId: matchId,
             homeGoals: val.a,
             awayGoals: val.b,
+            stake: val.stake || 0,
             submittedAt: {
               '.sv': 'timestamp'
             },
@@ -471,6 +473,7 @@ function App() {
         [matchId]: {
           a: val.a,
           b: val.b,
+          stake: val.stake || 0,
           points: null,
           scored: false,
           unsynced: true

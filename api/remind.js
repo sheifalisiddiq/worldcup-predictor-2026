@@ -138,7 +138,10 @@ async function recapPass(ctx) {
   predList.forEach(p => {
     const mm = matchById[String(p.matchId)];
     if (mm && mm.status === 'finished' && mm.scoreA != null) {
-      totals[p.uid] = (totals[p.uid] || 0) + pointsFor({ a: p.homeGoals, b: p.awayGoals }, mm);
+      const basePts = pointsFor({ a: p.homeGoals, b: p.awayGoals }, mm);
+      const stake = p.stake || 0;
+      const wagerDelta = stake > 0 ? (basePts > 0 ? stake : -stake) : 0;
+      totals[p.uid] = Math.max(0, (totals[p.uid] || 0) + basePts + wagerDelta);
     }
   });
   const rankMap = {};
@@ -154,14 +157,19 @@ async function recapPass(ctx) {
     predList.forEach(p => {
       if (String(p.matchId) !== String(m.id) || !uidTokens[p.uid]) return;
       const pts = pointsFor({ a: p.homeGoals, b: p.awayGoals }, m);
+      const stake = p.stake || 0;
+      const wagerDelta = stake > 0 ? (pts > 0 ? stake : -stake) : 0;
       const rank = rankMap[p.uid] || 0;
       const prev = prevRanks[p.uid];
       const delta = (prev != null && rank) ? (prev - rank) : 0;
+      const wagerSuffix = stake > 0
+        ? (pts > 0 ? ' 💰 +' + stake + ' wagered!' : ' 💸 −' + stake + ' wagered')
+        : '';
       let body;
-      if (pts <= 0) body = "No points this time — next one's yours 💪";
-      else if (delta > 0) body = '📈 You climbed to #' + rank + ' (▲' + delta + ')!';
-      else if (delta < 0) body = '⚠️ Someone passed you — now #' + rank + ' (▼' + Math.abs(delta) + ')';
-      else body = 'You scored +' + pts + ' — now #' + rank + '!';
+      if (pts <= 0) body = "No points this time — next one's yours 💪" + wagerSuffix;
+      else if (delta > 0) body = '📈 You climbed to #' + rank + ' (▲' + delta + ')!' + wagerSuffix;
+      else if (delta < 0) body = '⚠️ Someone passed you — now #' + rank + ' (▼' + Math.abs(delta) + ')' + wagerSuffix;
+      else body = 'You scored +' + pts + ' — now #' + rank + '!' + wagerSuffix;
       const data = {
         title: '⚽ ' + m.teamA + ' ' + m.scoreA + '–' + m.scoreB + ' ' + m.teamB,
         body:  body,

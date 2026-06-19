@@ -37,7 +37,7 @@ async function fetchPredictionsByUidREST() {
   if (data) {
     Object.values(data).forEach(p => {
       if (!p || p.uid == null || p.matchId == null) return;
-      (byUid[p.uid] = byUid[p.uid] || {})[p.matchId] = { a: p.homeGoals, b: p.awayGoals };
+      (byUid[p.uid] = byUid[p.uid] || {})[p.matchId] = { a: p.homeGoals, b: p.awayGoals, stake: p.stake || 0 };
     });
   }
   return byUid;
@@ -83,10 +83,11 @@ async function fetchReferralCountsREST() {
    players who trail on overall points can still lead — and rank — somewhere.
    field = which value to sort/show · tiebreak = secondary sort · unit = row label. */
 const CATEGORIES = [
-  { key:'overall',   tab:'🏆 OVERALL',   field:'points',     tiebreak:'exact',  unit:'PTS'   },
-  { key:'bullseyes', tab:'🎯 BULLSEYES', field:'exact',      tiebreak:'points', unit:'EXACT' },
-  { key:'today',     tab:'⚡ TODAY',     field:'matchdayPts',tiebreak:'points', unit:'TODAY' },
-  { key:'streak',    tab:'🔥 STREAK',    field:'streak',     tiebreak:'points', unit:'🔥'    },
+  { key:'overall',   tab:'🏆 OVERALL',   field:'points',     tiebreak:'exact',     unit:'PTS'   },
+  { key:'bullseyes', tab:'🎯 BULLSEYES', field:'exact',      tiebreak:'points',    unit:'EXACT' },
+  { key:'today',     tab:'⚡ TODAY',     field:'matchdayPts',tiebreak:'points',    unit:'TODAY' },
+  { key:'streak',    tab:'🔥 STREAK',    field:'streak',     tiebreak:'points',    unit:'🔥'    },
+  { key:'gambler',   tab:'💰 GAMBLER',   field:'wagerNet',   tiebreak:'points',    unit:'NET'   },
 ];
 
 /* Achievement strip. Derived from WC.BADGE_CATALOG — nothing stored. Tap a badge to
@@ -205,6 +206,7 @@ function Leaderboard({ matches }) {
             played:      t.played,
             matchdayPts: t.matchdayPts,
             streak:      t.streak,
+            wagerNet:    t.wagerNet || 0,
             isMe:        d.uid === (WC.me && WC.me.uid),
           };
         });
@@ -939,12 +941,12 @@ function Profile({ predictions, onOpen, matches }) {
           <div className="hatch" style={{ position:'absolute', inset:0, pointerEvents:'none', opacity:.4 }} />
           <div style={{ position:'relative', zIndex:1 }}>
             <div className="display" style={{ fontSize:22, color:'#fff', lineHeight:.9 }}>
-              INVITE FRIENDS · +3 PTS EACH
+              INVITE FRIENDS · +2 PTS EACH
             </div>
             <div className="heavy" style={{ fontSize:11, color:'rgba(255,255,255,.9)', marginTop:6, lineHeight:1.4 }}>
               {stats.referrals > 0
                 ? `🎉 ${stats.referrals} friend${stats.referrals === 1 ? '' : 's'} joined · +${stats.referralPts} pts earned`
-                : 'Share your link — earn 3 points for every friend who joins.'}
+                : 'Share your link — earn 2 points for every friend who joins.'}
             </div>
 
             {/* The unique link, shown read-only so the user sees what they share */}

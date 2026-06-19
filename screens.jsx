@@ -446,8 +446,14 @@ function MatchDetail({ matchId, predictions, setPrediction, onBack, onOpen, matc
   const existing = predictions[matchId];
   const [a, setA] = useS1(existing ? existing.a : null);
   const [b, setB] = useS1(existing ? existing.b : null);
+  const [stake, setStake] = useS1(existing ? (existing.stake || 0) : 0);
   const [saved, setSaved] = useS1(false);
   const [saving, setSaving] = useS1(false);
+  const currentBalance = React.useMemo(
+    () => WC.computeUserTotals(predictions, matchData).total,
+    [predictions, matchData]
+  );
+  const maxStake = Math.max(0, Math.floor(currentBalance / 2));
   if (!m) return null;
   const locked = isLocked(m);
   const finished = m.status === 'finished';
@@ -466,7 +472,7 @@ function MatchDetail({ matchId, predictions, setPrediction, onBack, onOpen, matc
     // failed — so users on flaky/mobile connections were told their pick locked
     // when it never reached the database, and it "cancelled" on their return.
     setSaving(true);
-    const ok = await setPrediction(matchId, { a, b });
+    const ok = await setPrediction(matchId, { a, b, stake });
     setSaving(false);
     if (!ok) {
       window.toast('Couldn’t lock your pick — check your connection and tap again.', 'error', 5000);
@@ -604,6 +610,42 @@ function MatchDetail({ matchId, predictions, setPrediction, onBack, onOpen, matc
               )}
             </div>
 
+            {maxStake > 0 && (
+              <div style={{ marginTop:18, padding:'14px', background:'var(--bg)', border:'2px solid var(--line)', borderRadius:0 }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                  <span className="heavy" style={{ fontSize:12, letterSpacing:'.07em' }}>💰 WAGER <span style={{ fontWeight:400, letterSpacing:0, fontSize:11, color:'var(--muted)' }}>(optional)</span></span>
+                  <span className="mono" style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>BAL: {currentBalance} PTS · MAX: {maxStake}</span>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:8, justifyContent:'center' }}>
+                  <button onClick={() => setStake(0)} className="heavy" style={{
+                    padding:'6px 10px', fontSize:11, border:'2px solid var(--line)', letterSpacing:'.05em',
+                    background: stake === 0 ? 'var(--ink)' : 'var(--panel)', color: stake === 0 ? 'var(--bg)' : 'var(--ink)',
+                  }}>NONE</button>
+                  <button onClick={() => setStake(Math.max(0, stake - 1))} className="heavy" style={{
+                    width:36, height:36, fontSize:18, border:'2px solid var(--line)', background:'var(--panel)',
+                    color: stake > 0 ? 'var(--ink)' : 'var(--muted)',
+                  }}>−</button>
+                  <span className="mono" style={{ fontSize:20, fontWeight:800, minWidth:60, textAlign:'center', color:'var(--ink)' }}>
+                    {stake} PTS
+                  </span>
+                  <button onClick={() => setStake(Math.min(maxStake, stake + 1))} className="heavy" style={{
+                    width:36, height:36, fontSize:18, border:'2px solid var(--line)', background:'var(--panel)', color:'var(--ink)',
+                  }}>+</button>
+                  <button onClick={() => setStake(maxStake)} className="heavy" style={{
+                    padding:'6px 10px', fontSize:11, border:'2px solid var(--line)', letterSpacing:'.05em',
+                    background: stake === maxStake ? '#C9A427' : 'var(--panel)', color: stake === maxStake ? '#000' : 'var(--ink)',
+                  }}>MAX</button>
+                </div>
+                {stake > 0 && (
+                  <div className="mono" style={{ textAlign:'center', marginTop:8, fontSize:11, fontWeight:700 }}>
+                    <span style={{ color:'#2CB82A' }}>WIN → +{stake} pts</span>
+                    <span style={{ color:'var(--muted)', margin:'0 8px' }}>·</span>
+                    <span style={{ color:'#E8192C' }}>LOSE → −{stake} pts</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button onClick={save} disabled={!ready || saving} className="heavy" style={{
               width:'100%', marginTop:16, padding:16, fontSize:16, letterSpacing:'.05em',
               border:'3px solid #000',
@@ -638,6 +680,9 @@ function MatchDetail({ matchId, predictions, setPrediction, onBack, onOpen, matc
 
 function ResultBreakdown({ m, prediction, pts, accent }) {
   const isExact = prediction && prediction.a === m.scoreA && prediction.b === m.scoreB;
+  const stake = prediction ? (prediction.stake || 0) : 0;
+  const wagerWon = stake > 0 && pts > 0;
+  const wagerLost = stake > 0 && pts === 0;
   return (
     <div className="bd hard-lg" style={{ background:'var(--panel)', padding:'18px 14px' }}>
       <div className="heavy" style={{ fontSize:14, letterSpacing:'.07em', marginBottom:14 }}>FULL TIME</div>
@@ -652,22 +697,33 @@ function ResultBreakdown({ m, prediction, pts, accent }) {
         </div>
       )}
       {prediction ? (
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
-          <div>
-            <div className="mono" style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>YOUR PICK</div>
-            <div className="mono" style={{ fontSize:30, fontWeight:800, color:'var(--ink)' }}>{prediction.a}–{prediction.b}</div>
+        <>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
+            <div>
+              <div className="mono" style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>YOUR PICK</div>
+              <div className="mono" style={{ fontSize:30, fontWeight:800, color:'var(--ink)' }}>{prediction.a}–{prediction.b}</div>
+            </div>
+            <div style={{ textAlign:'center' }}>
+              <div className="mono" style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>ACTUAL</div>
+              <div className="mono" style={{ fontSize:30, fontWeight:800, color:accent }}>{m.scoreA}–{m.scoreB}</div>
+            </div>
+            <div style={{ textAlign:'right' }}>
+              <div className="mono" style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>POINTS</div>
+              <div className="display" style={{ fontSize:36,
+                color: pts >= 3 ? '#2CB82A' : pts >= 1 ? '#C9A427' : 'var(--muted)',
+                animation:'popIn .5s' }}>+{pts}</div>
+            </div>
           </div>
-          <div style={{ textAlign:'center' }}>
-            <div className="mono" style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>ACTUAL</div>
-            <div className="mono" style={{ fontSize:30, fontWeight:800, color:accent }}>{m.scoreA}–{m.scoreB}</div>
-          </div>
-          <div style={{ textAlign:'right' }}>
-            <div className="mono" style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>POINTS</div>
-            <div className="display" style={{ fontSize:36,
-              color: pts >= 3 ? '#2CB82A' : pts >= 1 ? '#C9A427' : 'var(--muted)',
-              animation:'popIn .5s' }}>+{pts}</div>
-          </div>
-        </div>
+          {stake > 0 && (
+            <div className="heavy" style={{
+              marginTop:12, padding:'8px 12px', border:'2px solid #000',
+              background: wagerWon ? '#2CB82A' : '#E8192C', color:'#fff',
+              fontSize:12, letterSpacing:'.06em', textAlign:'center', animation:'popIn .4s',
+            }}>
+              {wagerWon ? `💰 WAGER WON! +${stake} bonus pts` : `💸 WAGER LOST — −${stake} pts`}
+            </div>
+          )}
+        </>
       ) : (
         <div className="mono" style={{ color:'var(--muted)', fontSize:13 }}>You didn't predict this match. 0 points.</div>
       )}
@@ -676,13 +732,19 @@ function ResultBreakdown({ m, prediction, pts, accent }) {
 }
 
 function LockedPanel({ m, prediction }) {
+  const stake = prediction ? (prediction.stake || 0) : 0;
   return (
     <div className="bd hard-lg" style={{ background:'var(--panel)', padding:'18px 14px' }}>
       <div className="heavy" style={{ fontSize:14, letterSpacing:'.07em', marginBottom:10 }}>🔒 PREDICTIONS LOCKED</div>
       {prediction ? (
-        <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
           <span className="mono" style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>YOUR LOCKED PICK</span>
           <span className="mono" style={{ fontSize:28, fontWeight:800, color:'var(--ink)' }}>{prediction.a}–{prediction.b}</span>
+          {stake > 0 && (
+            <span className="heavy" style={{ fontSize:11, letterSpacing:'.06em', background:'#C9A427', color:'#000', padding:'3px 8px', border:'2px solid #000' }}>
+              💰 {stake} WAGERED
+            </span>
+          )}
         </div>
       ) : (
         <div className="mono" style={{ color:'var(--muted)', fontSize:13 }}>Kickoff passed — too late to predict this one.</div>

@@ -285,7 +285,7 @@ function App() {
       if (data) {
         Object.values(data).forEach(d => {
           if (!d || d.matchId == null) return;
-          server[d.matchId] = { a: d.homeGoals, b: d.awayGoals, points: d.points, scored: d.scored };
+          server[d.matchId] = { a: d.homeGoals, b: d.awayGoals, stake: d.stake || 0, points: d.points, scored: d.scored };
         });
       }
       // Server is authoritative for every match it knows. An UNSYNCED local pick
@@ -325,6 +325,7 @@ function App() {
             matchId: matchId,
             homeGoals: val.a,
             awayGoals: val.b,
+            stake: val.stake || 0,
             submittedAt: { '.sv': 'timestamp' },
             points: null,
             scored: false,
@@ -365,7 +366,7 @@ function App() {
     // confirms. Writing to localStorage here is what stops a failed REST write
     // from losing the pick on the next reload.
     setPredictions(p => {
-      const next = { ...p, [matchId]: { a: val.a, b: val.b, points: null, scored: false, unsynced: true } };
+      const next = { ...p, [matchId]: { a: val.a, b: val.b, stake: val.stake || 0, points: null, scored: false, unsynced: true } };
       writeLocalPreds(uid, next);
       return next;
     });

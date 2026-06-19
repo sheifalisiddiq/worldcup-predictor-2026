@@ -712,8 +712,11 @@ function MatchDetail({
   const existing = predictions[matchId];
   const [a, setA] = useS1(existing ? existing.a : null);
   const [b, setB] = useS1(existing ? existing.b : null);
+  const [stake, setStake] = useS1(existing ? existing.stake || 0 : 0);
   const [saved, setSaved] = useS1(false);
   const [saving, setSaving] = useS1(false);
+  const currentBalance = React.useMemo(() => WC.computeUserTotals(predictions, matchData).total, [predictions, matchData]);
+  const maxStake = Math.max(0, Math.floor(currentBalance / 2));
   if (!m) return null;
   const locked = isLocked(m);
   const finished = m.status === 'finished';
@@ -733,7 +736,8 @@ function MatchDetail({
     setSaving(true);
     const ok = await setPrediction(matchId, {
       a,
-      b
+      b,
+      stake
     });
     setSaving(false);
     if (!ok) {
@@ -1043,7 +1047,123 @@ function MatchDetail({
     style: {
       fontSize: 10
     }
-  }, "\xB7 extra time"))), /*#__PURE__*/React.createElement("button", {
+  }, "\xB7 extra time"))), maxStake > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 18,
+      padding: '14px',
+      background: 'var(--bg)',
+      border: '2px solid var(--line)',
+      borderRadius: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "heavy",
+    style: {
+      fontSize: 12,
+      letterSpacing: '.07em'
+    }
+  }, "\uD83D\uDCB0 WAGER ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 400,
+      letterSpacing: 0,
+      fontSize: 11,
+      color: 'var(--muted)'
+    }
+  }, "(optional)")), /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      fontSize: 11,
+      color: 'var(--muted)',
+      fontWeight: 700
+    }
+  }, "BAL: ", currentBalance, " PTS \xB7 MAX: ", maxStake)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      justifyContent: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setStake(0),
+    className: "heavy",
+    style: {
+      padding: '6px 10px',
+      fontSize: 11,
+      border: '2px solid var(--line)',
+      letterSpacing: '.05em',
+      background: stake === 0 ? 'var(--ink)' : 'var(--panel)',
+      color: stake === 0 ? 'var(--bg)' : 'var(--ink)'
+    }
+  }, "NONE"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setStake(Math.max(0, stake - 1)),
+    className: "heavy",
+    style: {
+      width: 36,
+      height: 36,
+      fontSize: 18,
+      border: '2px solid var(--line)',
+      background: 'var(--panel)',
+      color: stake > 0 ? 'var(--ink)' : 'var(--muted)'
+    }
+  }, "\u2212"), /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      fontSize: 20,
+      fontWeight: 800,
+      minWidth: 60,
+      textAlign: 'center',
+      color: 'var(--ink)'
+    }
+  }, stake, " PTS"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setStake(Math.min(maxStake, stake + 1)),
+    className: "heavy",
+    style: {
+      width: 36,
+      height: 36,
+      fontSize: 18,
+      border: '2px solid var(--line)',
+      background: 'var(--panel)',
+      color: 'var(--ink)'
+    }
+  }, "+"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setStake(maxStake),
+    className: "heavy",
+    style: {
+      padding: '6px 10px',
+      fontSize: 11,
+      border: '2px solid var(--line)',
+      letterSpacing: '.05em',
+      background: stake === maxStake ? '#C9A427' : 'var(--panel)',
+      color: stake === maxStake ? '#000' : 'var(--ink)'
+    }
+  }, "MAX")), stake > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "mono",
+    style: {
+      textAlign: 'center',
+      marginTop: 8,
+      fontSize: 11,
+      fontWeight: 700
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: '#2CB82A'
+    }
+  }, "WIN \u2192 +", stake, " pts"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--muted)',
+      margin: '0 8px'
+    }
+  }, "\xB7"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: '#E8192C'
+    }
+  }, "LOSE \u2192 \u2212", stake, " pts"))), /*#__PURE__*/React.createElement("button", {
     onClick: save,
     disabled: !ready || saving,
     className: "heavy",
@@ -1099,6 +1219,9 @@ function ResultBreakdown({
   accent
 }) {
   const isExact = prediction && prediction.a === m.scoreA && prediction.b === m.scoreB;
+  const stake = prediction ? prediction.stake || 0 : 0;
+  const wagerWon = stake > 0 && pts > 0;
+  const wagerLost = stake > 0 && pts === 0;
   return /*#__PURE__*/React.createElement("div", {
     className: "bd hard-lg",
     style: {
@@ -1126,7 +1249,7 @@ function ResultBreakdown({
       animation: 'popIn .4s',
       boxShadow: '5px 5px 0 0 #000'
     }
-  }, "\uD83C\uDFAF EXACT SCORE! You nailed it!"), prediction ? /*#__PURE__*/React.createElement("div", {
+  }, "\uD83C\uDFAF EXACT SCORE! You nailed it!"), prediction ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       alignItems: 'center',
@@ -1184,7 +1307,20 @@ function ResultBreakdown({
       color: pts >= 3 ? '#2CB82A' : pts >= 1 ? '#C9A427' : 'var(--muted)',
       animation: 'popIn .5s'
     }
-  }, "+", pts))) : /*#__PURE__*/React.createElement("div", {
+  }, "+", pts))), stake > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "heavy",
+    style: {
+      marginTop: 12,
+      padding: '8px 12px',
+      border: '2px solid #000',
+      background: wagerWon ? '#2CB82A' : '#E8192C',
+      color: '#fff',
+      fontSize: 12,
+      letterSpacing: '.06em',
+      textAlign: 'center',
+      animation: 'popIn .4s'
+    }
+  }, wagerWon ? `💰 WAGER WON! +${stake} bonus pts` : `💸 WAGER LOST — −${stake} pts`)) : /*#__PURE__*/React.createElement("div", {
     className: "mono",
     style: {
       color: 'var(--muted)',
@@ -1196,6 +1332,7 @@ function LockedPanel({
   m,
   prediction
 }) {
+  const stake = prediction ? prediction.stake || 0 : 0;
   return /*#__PURE__*/React.createElement("div", {
     className: "bd hard-lg",
     style: {
@@ -1213,7 +1350,8 @@ function LockedPanel({
     style: {
       display: 'flex',
       alignItems: 'center',
-      gap: 14
+      gap: 14,
+      flexWrap: 'wrap'
     }
   }, /*#__PURE__*/React.createElement("span", {
     className: "mono",
@@ -1229,7 +1367,17 @@ function LockedPanel({
       fontWeight: 800,
       color: 'var(--ink)'
     }
-  }, prediction.a, "\u2013", prediction.b)) : /*#__PURE__*/React.createElement("div", {
+  }, prediction.a, "\u2013", prediction.b), stake > 0 && /*#__PURE__*/React.createElement("span", {
+    className: "heavy",
+    style: {
+      fontSize: 11,
+      letterSpacing: '.06em',
+      background: '#C9A427',
+      color: '#000',
+      padding: '3px 8px',
+      border: '2px solid #000'
+    }
+  }, "\uD83D\uDCB0 ", stake, " WAGERED")) : /*#__PURE__*/React.createElement("div", {
     className: "mono",
     style: {
       color: 'var(--muted)',

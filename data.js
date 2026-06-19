@@ -31,7 +31,7 @@
   var scoring = {
     exactGroup: 3, outcomeGroup: 1,
     exactKnockout: 5, outcomeKnockout: 1,
-    referral: 3,
+    referral: 2,
     describe: 'Exact score 3 pts · Right result 1 pt · Knockout exact 5 pts',
   };
 
@@ -56,6 +56,7 @@
     var byId = {};
     (matches || []).forEach(function(m) { byId[m.id] = m; });
     var total = 0, exact = 0, result = 0, played = 0, picks = 0, matchdayPts = 0;
+    var wagerNet = 0, wagerWins = 0, wagerLosses = 0;
     // Collect settled picks so we can also derive the current scoring streak,
     // which needs the picks in chronological order.
     var settled = [];
@@ -71,6 +72,12 @@
         if (pts >= exactThreshold) exact++;
         else if (pts > 0) result++;
         if (matchdaySet && matchdaySet.has && matchdaySet.has(m.id)) matchdayPts += pts;
+        // Wager outcome: correct prediction doubles the stake, wrong loses it.
+        var stake = (p && p.stake) || 0;
+        if (stake > 0) {
+          if (pts > 0) { wagerNet += stake; wagerWins++; }
+          else { wagerNet -= stake; wagerLosses++; }
+        }
         settled.push({ kickoff: m.kickoff, pts: pts });
       }
     });
@@ -85,10 +92,13 @@
     // source of truth so Profile and Leaderboard never disagree, and it self-
     // heals from the raw /referrals records (never a stored counter).
     var referralPts = scoring.referral * (referralCount || 0);
-    total += referralPts;
+    total += referralPts + wagerNet;
+    // Floor at 0 — losing wagers can't push a player into negative territory.
+    total = Math.max(0, total);
     return { total: total, exact: exact, result: result, played: played,
              picks: picks, matchdayPts: matchdayPts, streak: streak,
-             referrals: (referralCount || 0), referralPts: referralPts };
+             referrals: (referralCount || 0), referralPts: referralPts,
+             wagerNet: wagerNet, wagerWins: wagerWins, wagerLosses: wagerLosses };
   }
 
   // The set of match ids belonging to the latest active "matchday" — used for the
