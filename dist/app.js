@@ -157,6 +157,16 @@ function App() {
       setSigned(true);
       setAuthLoading(false);
 
+      // When the browser opens the Google OAuth popup as a new tab instead of a
+      // true popup window (common on Android Chrome with strict popup blocking),
+      // Firebase can't close that tab via window.close() after sending the auth
+      // result back. The user ends up staring at a dangling tab. Close it here:
+      // if this tab has an opener it was spawned for OAuth — closing it returns
+      // the user to the original app tab that is now also signed in.
+      try {
+        if (window.opener && window.opener !== window) window.close();
+      } catch (e) {}
+
       // Predictions load in the BACKGROUND over REST. This runs INDEPENDENTLY of
       // the profile read below: previously it was sequenced after an SDK
       // once('value') that, when the realtime socket wedged, never resolved — so
